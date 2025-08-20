@@ -41,6 +41,7 @@ import java.util.Objects;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+
 /**
  * Utility class for building OpenAPI Specification (OAS) from Kong routes and services.
  */
@@ -331,9 +332,8 @@ public class KongAPIUtil {
 
         for (KongRoute r : routes) {
             List<String> routePaths = (r.getPaths() != null) ? r.getPaths() : java.util.Collections.<String>emptyList();
-            List<String> methods = (r.getMethods() != null && !r.getMethods().isEmpty())
-                    ? r.getMethods()
-                    : java.util.Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
+            List<String> methods = (r.getMethods() != null && !r.getMethods().isEmpty()) ? r.getMethods() :
+                    java.util.Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
             for (String kongPath : routePaths) {
                 String oasPath = toOasPath(kongPath); // normalize regex → template
@@ -376,10 +376,11 @@ public class KongAPIUtil {
         return root.toString();
     }
 
-    /** Convert Kong route path value to an OAS path template. Handles:
-     *  - plain prefixes like "/get" (returned as-is)
-     *  - regex form starting with "~" and ending with "$"
-     *  - named groups like (?<value>[^#?/]+)  →  {value}
+    /**
+     * Convert Kong route path value to an OAS path template. Handles:
+     * - plain prefixes like "/get" (returned as-is)
+     * - regex form starting with "~" and ending with "$"
+     * - named groups like (?<value>[^#?/]+)  →  {value}
      */
     public static String toOasPath(String kongPath) {
         if (kongPath == null || kongPath.isEmpty()) {
@@ -516,6 +517,57 @@ public class KongAPIUtil {
         return sb.toString();
     }
 
+    public static KongService buildKongService(API api) throws APIManagementException {
+        KongService service = new KongService();
+        service.setName(api.getId().getName());
+        String endpointConfig = api.getEndpointConfig();
+        if (endpointConfig != null && !endpointConfig.isEmpty()) {
+            JsonObject config = new com.google.gson.JsonParser().parse(endpointConfig).getAsJsonObject();
+            JsonObject productionEndpoints = config.getAsJsonObject("production_endpoints");
+            if (productionEndpoints != null) {
+                String url = productionEndpoints.get("url").getAsString();
+                URL parsedUrl;
+                try {
+                    parsedUrl = new URL(url);
+                } catch (MalformedURLException e) {
+                    throw new APIManagementException("Invalid URL in endpoint config: " + url, e);
+                }
+                service.setHost(parsedUrl.getHost());
+                service.setPort(parsedUrl.getPort());
+                service.setProtocol(parsedUrl.getProtocol());
+                service.setPath(parsedUrl.getPath());
+            }
+        }
+        return service;
+    }
+
+    public static List<KongRoute> buildKongRoutes(API api, String id) {
+        List<KongRoute> kongRoutes = new ArrayList<>();
+        if (api != null && StringUtils.isNotEmpty(id)) {
+            Set<URITemplate> uriTemplates = api.getUriTemplates();
+            if (uriTemplates != null && !uriTemplates.isEmpty()) {
+                for (URITemplate template : uriTemplates) {
+                    KongRoute route = new KongRoute();
+                    route.setStripPath(true);
+                    route.setName(template.getHTTPVerb().toLowerCase()
+                            .concat(template.getUriTemplate().replaceAll("[^a-zA-Z0-9_-]", "")));
+                    route.setPaths(Collections.singletonList(toRegex(template.getUriTemplate())));
+                    route.setMethods(template.getHTTPVerb() != null ?
+                            Collections.singletonList(template.getHTTPVerb().toUpperCase(Locale.ROOT)) :
+                            Collections.singletonList("GET"));
+                    kongRoutes.add(route);
+                }
+            }
+        }
+        return kongRoutes;
+    }
+
+    private static String toRegex(String path) {
+        String regex = path.replaceAll("\\{[^/]+\\}", "([^/]+)")   // normal params
+                .replaceAll("\\{[^/]+\\+\\}", "(.+)");  // greedy params
+        return "~" + regex + "$";
+    }
+
     /**
      * Checks if the environment is configured for Kubernetes deployment.
      *
@@ -613,5 +665,5 @@ public class KongAPIUtil {
         }
         return v.startsWith("/") ? v : "/" + v;
     }
-    
+
 }
