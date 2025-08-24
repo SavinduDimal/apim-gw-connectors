@@ -31,9 +31,20 @@ import java.util.List;
 public class PagedResponse<T> {
     private List<T> data;
 
+    public PagedResponse(List<T> data, String next, String offset) {
+        this.data = data;
+        this.next = next;
+        this.offset = offset;
+    }
+
+    public PagedResponse() {
+    }
+
     // Optional fields you might get back from Konnect
-    @SerializedName("next")   private String next;
-    @SerializedName("offset") private String offset;
+    @SerializedName("next")
+    private String next;
+    @SerializedName("offset")
+    private String offset;
 
     public List<T> getData() {
         return data;

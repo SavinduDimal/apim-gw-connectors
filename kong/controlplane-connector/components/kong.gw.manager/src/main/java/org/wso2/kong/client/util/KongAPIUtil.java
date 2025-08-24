@@ -18,26 +18,38 @@
 
 package org.wso2.kong.client.util;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
+
+import org.apache.commons.lang3.StringUtils;
+
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.CORSConfiguration;
 import org.wso2.carbon.apimgt.api.model.Environment;
+import org.wso2.carbon.apimgt.api.model.URITemplate;
+import org.wso2.carbon.apimgt.impl.utils.APIUtil;
 import org.wso2.kong.client.KongConstants;
+import org.wso2.kong.client.model.CorsPlugin;
 import org.wso2.kong.client.model.KongPlugin;
 import org.wso2.kong.client.model.KongRoute;
 import org.wso2.kong.client.model.KongService;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -46,19 +58,16 @@ import java.util.regex.Pattern;
  * Utility class for building OpenAPI Specification (OAS) from Kong routes and services.
  */
 public class KongAPIUtil {
-    public static final List<String> DEFAULT_ALLOW_HEADERS = Arrays.asList(
-            "authorization",
-            "Access-Control-Allow-Origin",
-            "Content-Type",
-            "SOAPAction",
-            "apikey",
-            "Internal-Key"
-    );
+    public static final List<String> DEFAULT_ALLOW_HEADERS =
+            Arrays.asList("authorization", "Access-Control-Allow-Origin", "Content-Type", "SOAPAction", "apikey",
+                    "Internal-Key");
 
-    public static final java.util.Set<String> WSO2_ALLOWED_METHODS =
-            new java.util.LinkedHashSet<>(Arrays.asList("GET", "PUT", "POST", "DELETE", "PATCH", "OPTIONS"));
+    public static final Set<String> WSO2_ALLOWED_METHODS =
+            new LinkedHashSet<>(Arrays.asList("GET", "PUT", "POST", "DELETE", "PATCH", "OPTIONS"));
 
-    /** Transform a Kong CORS plugin to WSO2 CORSConfiguration. */
+    /**
+     * Transform a Kong CORS plugin to WSO2 CORSConfiguration.
+     */
     public static CORSConfiguration kongCorsToWso2Cors(KongPlugin plugin) {
         boolean enabled = plugin.getEnabled() != null ? plugin.getEnabled() : false;
         JsonObject cfg = plugin.getConfig(); // may be null if malformed
@@ -99,13 +108,7 @@ public class KongAPIUtil {
             }
         }
 
-        CORSConfiguration cors = new CORSConfiguration(
-                enabled,
-                origins,
-                allowCreds,
-                headers,
-                methods
-        );
+        CORSConfiguration cors = new CORSConfiguration(enabled, origins, allowCreds, headers, methods);
         return cors;
     }
 
@@ -136,7 +139,9 @@ public class KongAPIUtil {
         return out;
     }
 
-    /** Transform a Kong Advanced Rate Limiting plugin to WSO2 Rate Limiting Policy. */
+    /**
+     * Transform a Kong Advanced Rate Limiting plugin to WSO2 Rate Limiting Policy.
+     */
     public static String kongRateLimitingToWso2Policy(KongPlugin plugin) {
         if (plugin == null || plugin.getConfig() == null) {
             return null;
@@ -155,7 +160,7 @@ public class KongAPIUtil {
         // Build index → value map for quick lookup
         int n = Math.min(limits.size(), windows.size());
         // Preference order for APIM-friendly windows
-        int[] preferred = new int[] { 60, 3600, 86400, 604800, 2592000 };
+        int[] preferred = new int[] {60, 3600, 86400, 604800, 2592000};
 
         // Try preferred windows first
         for (int pw : preferred) {
@@ -187,19 +192,29 @@ public class KongAPIUtil {
         return null;
     }
 
-    /** Map known window sizes (seconds) to APIM suffix. */
+    /**
+     * Map known window sizes (seconds) to APIM suffix.
+     */
     private static String windowSuffix(int seconds) {
         switch (seconds) {
-            case 60:      return "PerMin";
-            case 3600:    return "PerHour";
-            case 86400:   return "PerDay";
-            case 604800:  return "PerWeek";
-            case 2592000: return "PerMonth"; // ~30 days
-            default:      return null;
+            case 60:
+                return "PerMin";
+            case 3600:
+                return "PerHour";
+            case 86400:
+                return "PerDay";
+            case 604800:
+                return "PerWeek";
+            case 2592000:
+                return "PerMonth"; // ~30 days
+            default:
+                return null;
         }
     }
 
-    /** Extract a list of integers from a JSON field that may be a single number or an array. */
+    /**
+     * Extract a list of integers from a JSON field that may be a single number or an array.
+     */
     private static List<Integer> getIntList(JsonObject obj, String key) {
         if (obj == null || !obj.has(key) || obj.get(key).isJsonNull()) {
             return Collections.emptyList();
@@ -241,8 +256,8 @@ public class KongAPIUtil {
     /**
      * Transform a standard Kong "rate-limiting" plugin to a WSO2 APIM API-level policy string.
      * Example:
-     *   config.minute = 4  -> "4PerMin"
-     *
+     * config.minute = 4  -> "4PerMin"
+     * <p>
      * Preference order if multiple are set: minute -> hour -> day -> month -> year -> second.
      * Returns null if plugin is disabled or no positive limits are present.
      */
@@ -331,9 +346,9 @@ public class KongAPIUtil {
         JsonObject paths = new JsonObject();
 
         for (KongRoute r : routes) {
-            List<String> routePaths = (r.getPaths() != null) ? r.getPaths() : java.util.Collections.<String>emptyList();
+            List<String> routePaths = (r.getPaths() != null) ? r.getPaths() : Collections.emptyList();
             List<String> methods = (r.getMethods() != null && !r.getMethods().isEmpty()) ? r.getMethods() :
-                    java.util.Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
+                    Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS");
 
             for (String kongPath : routePaths) {
                 String oasPath = toOasPath(kongPath); // normalize regex → template
@@ -520,11 +535,14 @@ public class KongAPIUtil {
     public static KongService buildKongService(API api) throws APIManagementException {
         KongService service = new KongService();
         service.setName(api.getId().getName());
+        service.setEnabled(true);
         String endpointConfig = api.getEndpointConfig();
         if (endpointConfig != null && !endpointConfig.isEmpty()) {
-            JsonObject config = new com.google.gson.JsonParser().parse(endpointConfig).getAsJsonObject();
-            JsonObject productionEndpoints = config.getAsJsonObject("production_endpoints");
-            if (productionEndpoints != null) {
+            JsonObject config = JsonParser.parseString(endpointConfig).getAsJsonObject();
+            JsonObject productionEndpoints = config.has("production_endpoints") ? config.getAsJsonObject(
+                    "production_endpoints") : null;
+            if (productionEndpoints != null && productionEndpoints.has("url") &&
+                    !productionEndpoints.get("url").isJsonNull()) {
                 String url = productionEndpoints.get("url").getAsString();
                 URL parsedUrl;
                 try {
@@ -533,14 +551,30 @@ public class KongAPIUtil {
                     throw new APIManagementException("Invalid URL in endpoint config: " + url, e);
                 }
                 service.setHost(parsedUrl.getHost());
-                service.setPort(parsedUrl.getPort());
+                if (parsedUrl.getPort() < 0) {
+                    if (KongConstants.HTTPS_PROTOCOL.equalsIgnoreCase(parsedUrl.getProtocol())) {
+                        service.setPort(KongConstants.DEFAULT_HTTPS_PORT);
+                    } else {
+                        service.setPort(KongConstants.DEFAULT_HTTP_PORT);
+                    }
+                } else {
+                    service.setPort(parsedUrl.getPort());
+                }
                 service.setProtocol(parsedUrl.getProtocol());
-                service.setPath(parsedUrl.getPath());
+                String path = parsedUrl.getPath();
+                service.setPath((path == null || path.isEmpty()) ? "/" : (path.startsWith("/") ? path : "/" + path));
             }
         }
         return service;
     }
 
+    /**
+     * Build Kong routes from API URI templates.
+     *
+     * @param api API to be deployed.
+     * @param id  Service id
+     * @return List of routes.
+     */
     public static List<KongRoute> buildKongRoutes(API api, String id) {
         List<KongRoute> kongRoutes = new ArrayList<>();
         if (api != null && StringUtils.isNotEmpty(id)) {
@@ -548,13 +582,21 @@ public class KongAPIUtil {
             if (uriTemplates != null && !uriTemplates.isEmpty()) {
                 for (URITemplate template : uriTemplates) {
                     KongRoute route = new KongRoute();
-                    route.setStripPath(true);
-                    route.setName(template.getHTTPVerb().toLowerCase()
+                    route.setStripPath(false);
+                    route.setName(template.getHTTPVerb().toLowerCase(Locale.US)
                             .concat(template.getUriTemplate().replaceAll("[^a-zA-Z0-9_-]", "")));
                     route.setPaths(Collections.singletonList(toRegex(template.getUriTemplate())));
-                    route.setMethods(template.getHTTPVerb() != null ?
-                            Collections.singletonList(template.getHTTPVerb().toUpperCase(Locale.ROOT)) :
-                            Collections.singletonList("GET"));
+                    if (template.getHttpVerb() != null) {
+                        List<String> httpMethods = new ArrayList<>();
+                        if (!"OPTIONS".equals(template.getHTTPVerb().toUpperCase(Locale.US))) {
+                            httpMethods.add("OPTIONS");
+                        }
+                        httpMethods.add(template.getHTTPVerb().toUpperCase(Locale.US));
+                        route.setMethods(httpMethods);
+                    } else {
+                        route.setMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
+                    }
+                    route.setService(new KongRoute.ServiceRef(id));
                     kongRoutes.add(route);
                 }
             }
@@ -563,9 +605,37 @@ public class KongAPIUtil {
     }
 
     private static String toRegex(String path) {
-        String regex = path.replaceAll("\\{[^/]+\\}", "([^/]+)")   // normal params
-                .replaceAll("\\{[^/]+\\+\\}", "(.+)");  // greedy params
-        return "~" + regex + "$";
+        if (path == null || path.isEmpty()) {
+            return "~^/$";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("~^");
+        boolean inParam = false;
+        for (int i = 0; i < path.length(); i++) {
+            char c = path.charAt(i);
+            if (c == '{') {
+                inParam = true;
+                // detect greedy "{name+}"
+                int end = path.indexOf('}', i + 1);
+                if (end < 0) {
+                    // treat "{" as a literal
+                    sb.append("\\{");
+                } else {
+                    boolean greedy = end > i + 1 && path.charAt(end - 1) == '+';
+                    sb.append(greedy ? "(.+)" : "([^/]+)");
+                    i = end; // jump to '}'
+                }
+                inParam = false;
+            } else {
+                // escape regex metacharacters
+                if ("\\.[]{}()*+-?^$|".indexOf(c) >= 0) {
+                    sb.append('\\');
+                }
+                sb.append(c);
+            }
+        }
+        sb.append("$");
+        return sb.toString();
     }
 
     /**
@@ -610,14 +680,11 @@ public class KongAPIUtil {
             String host = config.get(KongConstants.KONG_GATEWAY_HOST).getAsString();
             String context = config.get(KongConstants.KONG_API_CONTEXT).getAsString();
             String httpContext = config.has(KongConstants.KONG_GATEWAY_HTTP_CONTEXT) ?
-                    config.get(KongConstants.KONG_GATEWAY_HTTP_CONTEXT).getAsString() :
-                    null;
+                    config.get(KongConstants.KONG_GATEWAY_HTTP_CONTEXT).getAsString() : null;
             int httpsPort = config.has(KongConstants.KONG_GATEWAY_HTTPS_PORT) ?
-                    config.get(KongConstants.KONG_GATEWAY_HTTPS_PORT).getAsInt() :
-                    KongConstants.DEFAULT_HTTPS_PORT;
+                    config.get(KongConstants.KONG_GATEWAY_HTTPS_PORT).getAsInt() : KongConstants.DEFAULT_HTTPS_PORT;
             int httpPort = config.has(KongConstants.KONG_GATEWAY_HTTP_PORT) ?
-                    config.get(KongConstants.KONG_GATEWAY_HTTP_PORT).getAsInt() :
-                    KongConstants.DEFAULT_HTTP_PORT;
+                    config.get(KongConstants.KONG_GATEWAY_HTTP_PORT).getAsInt() : KongConstants.DEFAULT_HTTP_PORT;
 
             StringBuilder url = new StringBuilder();
             if (protocol == null || protocol.isEmpty()) {
@@ -625,11 +692,11 @@ public class KongAPIUtil {
             }
             url.append(protocol).append(KongConstants.PROTOCOL_SEPARATOR).append(host);
 
-            if (protocol.equalsIgnoreCase(
-                    KongConstants.HTTPS_PROTOCOL) && httpsPort != KongConstants.DEFAULT_HTTPS_PORT) {
+            if (protocol.equalsIgnoreCase(KongConstants.HTTPS_PROTOCOL) &&
+                    httpsPort != KongConstants.DEFAULT_HTTPS_PORT) {
                 url.append(KongConstants.HOST_PORT_SEPARATOR).append(httpsPort);
-            } else if (protocol.equalsIgnoreCase(
-                    KongConstants.HTTP_PROTOCOL) && httpPort != KongConstants.DEFAULT_HTTP_PORT) {
+            } else if (protocol.equalsIgnoreCase(KongConstants.HTTP_PROTOCOL) &&
+                    httpPort != KongConstants.DEFAULT_HTTP_PORT) {
                 url.append(KongConstants.HOST_PORT_SEPARATOR).append(httpPort);
             }
 
@@ -666,4 +733,68 @@ public class KongAPIUtil {
         return v.startsWith("/") ? v : "/" + v;
     }
 
+    /**
+     * Builds Kong plugins for the given API and associates them with the specified service ID.
+     *
+     * @param api       The API for which to build plugins
+     * @param serviceId The ID of the Kong service to associate the plugins with
+     * @return A list of Kong plugins associated with the service
+     */
+    public static List<KongPlugin> buildKongPluginsForService(API api, String serviceId) {
+        List<KongPlugin> plugins = new ArrayList<>();
+        KongPlugin corsPlugin = buildCorsPlugin(api, serviceId);
+        if (corsPlugin != null) {
+            plugins.add(corsPlugin);
+        }
+        return plugins;
+    }
+
+    private static KongPlugin buildCorsPlugin(API api, String serviceId) {
+        boolean corsEnabled = false;
+        List<String> origins = new ArrayList<>();
+        List<String> accessControlAllowHeaders = new ArrayList<>();
+        List<String> accessControlAllowMethods = new ArrayList<>();
+        boolean accessControlAllowCredentials = false;
+        List<String> accessControlExposeHeaders = new ArrayList<>();
+        if (APIUtil.isCORSEnabled()) {
+            corsEnabled = true;
+            if (StringUtils.isNotEmpty(APIUtil.getAllowedOrigins())) {
+                origins = Arrays.asList(APIUtil.getAllowedOrigins().split(","));
+            }
+            if (StringUtils.isNotEmpty(APIUtil.getAllowedHeaders())) {
+                accessControlAllowHeaders = Arrays.asList(APIUtil.getAllowedHeaders().split(","));
+            }
+            if (StringUtils.isNotEmpty(APIUtil.getAllowedMethods())) {
+                accessControlAllowMethods = Arrays.asList(APIUtil.getAllowedMethods().split(","));
+            }
+            accessControlAllowCredentials = APIUtil.isAllowCredentials();
+            if (StringUtils.isNotEmpty(APIUtil.getAccessControlExposedHeaders())) {
+                accessControlExposeHeaders = Arrays.asList(APIUtil.getAccessControlExposedHeaders().split(","));
+            }
+        }
+        if (api.getCorsConfiguration() != null) {
+            CORSConfiguration corsConfiguration = api.getCorsConfiguration();
+            if (corsConfiguration.isCorsConfigurationEnabled()) {
+                corsEnabled = true;
+                origins = corsConfiguration.getAccessControlAllowOrigins();
+                accessControlAllowHeaders = corsConfiguration.getAccessControlAllowHeaders();
+                accessControlAllowMethods = corsConfiguration.getAccessControlAllowMethods();
+                accessControlAllowCredentials = corsConfiguration.isAccessControlAllowCredentials();
+            }
+        }
+        if (corsEnabled) {
+            CorsPlugin corsPlugin = new CorsPlugin(false, accessControlAllowCredentials, accessControlExposeHeaders,
+                    accessControlAllowHeaders, accessControlAllowMethods, origins);
+            KongPlugin kongPlugin = new KongPlugin();
+            kongPlugin.setInstanceName(api.getUuid().concat("-cors"));
+            kongPlugin.setName("cors");
+            kongPlugin.setEnabled(true);
+            kongPlugin.setService(new KongPlugin.ServiceRef(serviceId));
+            Gson gson = new GsonBuilder().serializeNulls().create();
+            JsonElement corsJson = gson.toJsonTree(corsPlugin);
+            kongPlugin.setConfig(corsJson.getAsJsonObject());
+            return kongPlugin;
+        }
+        return null;
+    }
 }

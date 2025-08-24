@@ -114,226 +114,237 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
     @Override
     public List<DiscoveredAPI> discoverAPI() {
         if (!Objects.equals(deploymentType, KongConstants.KONG_KUBERNETES_DEPLOYMENT)) {
-            // List APIs (V3)
-            KongListResponse<KongAPI> apisResp = apiGatewayClient.listAPIs(KongConstants.DEFAULT_API_LIST_LIMIT);
-            List<KongAPI> apis = (apisResp != null && apisResp.getData() != null)
-                    ? apisResp.getData() : Collections.<KongAPI>emptyList();
+            try {
+                // List APIs (V3)
+                KongListResponse<KongAPI> apisResp = apiGatewayClient.listAPIs(KongConstants.DEFAULT_API_LIST_LIMIT);
+                List<KongAPI> apis = (apisResp != null && apisResp.getData() != null)
+                        ? apisResp.getData() : Collections.<KongAPI>emptyList();
 
-            // List implementations (api_id -> service link)
-            KongListResponse<KongAPIImplementation> implResp = apiGatewayClient.listAPIImplementations(
-                    KongConstants.DEFAULT_API_LIST_LIMIT);
-            List<KongAPIImplementation> implementations = (implResp != null && implResp.getData() != null)
-                    ? implResp.getData() : Collections.<KongAPIImplementation>emptyList();
+                // List implementations (api_id -> service link)
+                KongListResponse<KongAPIImplementation> implResp = apiGatewayClient.listAPIImplementations(
+                        KongConstants.DEFAULT_API_LIST_LIMIT);
+                List<KongAPIImplementation> implementations = (implResp != null && implResp.getData() != null)
+                        ? implResp.getData() : Collections.<KongAPIImplementation>emptyList();
 
-            // Build a map: api_id -> (cpId, serviceId)
-            Map<String, KongAPIImplementation.ServiceLink> apiToSvc = new HashMap<>();
-            for (KongAPIImplementation impl : implementations) {
-                if (impl.getApiId() != null && impl.getService() != null) {
-                    apiToSvc.put(impl.getApiId(), impl.getService());
+                // Build a map: api_id -> (cpId, serviceId)
+                Map<String, KongAPIImplementation.ServiceLink> apiToSvc = new HashMap<>();
+                for (KongAPIImplementation impl : implementations) {
+                    if (impl.getApiId() != null && impl.getService() != null) {
+                        apiToSvc.put(impl.getApiId(), impl.getService());
+                    }
                 }
-            }
 
-            List<DiscoveredAPI> retrievedAPIs = new ArrayList<>();
-            Set<String> linkedServices = new HashSet<>();
+                List<DiscoveredAPI> retrievedAPIs = new ArrayList<>();
+                Set<String> linkedServices = new HashSet<>();
             Gson gson = new Gson();
 
-            // Iterate APIs
-            for (KongAPI kongAPI : apis) {
-                String apiName = kongAPI.getName();
-                String apiVersion = kongAPI.getVersion();
-                String apiContext = kongAPI.getSlug();
-                String apiId = kongAPI.getId();
+                // Iterate APIs
+                for (KongAPI kongAPI : apis) {
+                    String apiName = kongAPI.getName();
+                    String apiVersion = kongAPI.getVersion();
+                    String apiContext = kongAPI.getSlug();
+                    String apiId = kongAPI.getId();
 
-                // WSO2 API object
-                APIIdentifier apiIdentifier = new APIIdentifier(KongConstants.DEFAULT_API_PROVIDER, apiName,
-                        apiVersion);
-                API api = new API(apiIdentifier);
-                api.setDisplayName(apiName);
-                api.setContext(KongAPIUtil.ensureLeadingSlash(apiContext));
-                api.setContextTemplate(apiContext != null ? apiContext.toLowerCase() : null);
-                api.setUuid(apiId);
-                api.setDescription(kongAPI.getDescription() != null ? kongAPI.getDescription() : "");
-                api.setOrganization(organization);
-                api.setRevision(false);
-                api.setInitiatedFromGateway(true);
-                api.setGatewayVendor(KongConstants.DEFAULT_GATEWAY_VENDOR);
-                api.setGatewayType(environment.getGatewayType());
+                    // WSO2 API object
+                    APIIdentifier apiIdentifier = new APIIdentifier(KongConstants.DEFAULT_API_PROVIDER, apiName,
+                            apiVersion);
+                    API api = new API(apiIdentifier);
+                    api.setDisplayName(apiName);
+                    api.setContext(KongAPIUtil.ensureLeadingSlash(apiContext));
+                    api.setContextTemplate(apiContext != null ? apiContext.toLowerCase() : null);
+                    api.setUuid(apiId);
+                    api.setDescription(kongAPI.getDescription() != null ? kongAPI.getDescription() : "");
+                    api.setOrganization(organization);
+                    api.setRevision(false);
+                    api.setInitiatedFromGateway(true);
+                    api.setGatewayVendor(KongConstants.DEFAULT_GATEWAY_VENDOR);
+                    api.setGatewayType(environment.getGatewayType());
 
-                // Fetch and set OAS definition (first spec id if present)
-                String oas = null;
-                if (kongAPI.getApiSpecIds() != null && !kongAPI.getApiSpecIds().isEmpty()) {
-                    String specId = kongAPI.getApiSpecIds().get(0);
-                    KongAPISpec spec = apiGatewayClient.getAPISpec(apiId, specId);
-                    if (spec != null && spec.getContent() != null) {
-                        oas = spec.getContent(); // raw OAS (JSON/YAML string)
-                    }
-                }
-                if (oas != null) {
-                    api.setSwaggerDefinition(oas);
-                }
-
-                // Map API -> Service via implementations, then fetch Service (V2) and set endpoints
-                KongService svc = null;
-                KongAPIImplementation.ServiceLink link = apiToSvc.get(apiId);
-                if (link != null && link.getControlPlaneId() != null && link.getId() != null) {
-                    String cpId = link.getControlPlaneId();
-                    String serviceId = link.getId();
-                    svc = apiGatewayClient.getService(cpId, serviceId);
-                    if (svc != null && svc.getHost() != null && svc.getProtocol() != null && svc.getPort() != null) {
-                        String endpoint = KongAPIUtil.buildEndpointUrl(
-                                svc.getProtocol(),
-                                svc.getHost(),
-                                svc.getPort(),
-                                svc.getPath()
-                        );
-                        api.setEndpointConfig(KongAPIUtil.buildEndpointConfigJson(endpoint, endpoint, false));
-                    }
-                }
-
-                api.setAvailableTiers(new HashSet<>(Collections.singleton(new Tier(KongConstants.DEFAULT_TIER))));
-
-                String selectedAPILevelRateLimitPolicy = null;
-
-                if (svc == null) {
-                    log.warn("No service found for API: " + apiName + " (ID: " + apiId + ")");
-                    continue; // Skip this API if no service is linked
-                }
-
-                // add to linked services to avoid duplicates
-                linkedServices.add(svc.getId());
-
-                // Fetch plugin related to services
-                PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(controlPlaneId,
-                        svc.getId(), KongConstants.DEFAULT_PLUGIN_LIST_LIMIT);
-                List<KongPlugin> plugins = (pluginsResp != null && pluginsResp.getData() != null)
-                        ? pluginsResp.getData() : Collections.<KongPlugin>emptyList();
-
-                for (KongPlugin plugin : plugins) {
-                    String pluginType = plugin.getName();
-
-                    if (KongConstants.KONG_CORS_PLUGIN_TYPE.equals(pluginType)) {
-                        api.setCorsConfiguration(KongAPIUtil.kongCorsToWso2Cors(plugin));
-                        continue;
-                    }
-
-                    if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(
-                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
-                        String p = KongAPIUtil.kongRateLimitingToWso2Policy(plugin);
-                        if (p != null) {
-                            selectedAPILevelRateLimitPolicy = p;
-                        }
-                        continue;
-                    }
-
-                    if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(
-                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
-                        String p = KongAPIUtil.kongRateLimitingStandardToWso2Policy(plugin);
-                        if (p != null) {
-                            selectedAPILevelRateLimitPolicy = p;
+                    // Fetch and set OAS definition (first spec id if present)
+                    String oas = null;
+                    if (kongAPI.getApiSpecIds() != null && !kongAPI.getApiSpecIds().isEmpty()) {
+                        String specId = kongAPI.getApiSpecIds().get(0);
+                        KongAPISpec spec = apiGatewayClient.getAPISpec(apiId, specId);
+                        if (spec != null && spec.getContent() != null) {
+                            oas = spec.getContent(); // raw OAS (JSON/YAML string)
                         }
                     }
-                }
-                if (selectedAPILevelRateLimitPolicy != null) {
-                    api.setApiLevelPolicy(selectedAPILevelRateLimitPolicy);
-                }
+                    if (oas != null) {
+                        api.setSwaggerDefinition(oas);
+                    }
 
-                DiscoveredAPI discoveredAPI = new DiscoveredAPI(api, gson.toJson(api));
+                    // Map API -> Service via implementations, then fetch Service (V2) and set endpoints
+                    KongService svc = null;
+                    KongAPIImplementation.ServiceLink link = apiToSvc.get(apiId);
+                    if (link != null && link.getControlPlaneId() != null && link.getId() != null) {
+                        String cpId = link.getControlPlaneId();
+                        String serviceId = link.getId();
+                        svc = apiGatewayClient.getService(cpId, serviceId);
+                        if (svc != null && svc.getHost() != null && svc.getProtocol() != null &&
+                                svc.getPort() != null) {
+                            String endpoint = KongAPIUtil.buildEndpointUrl(
+                                    svc.getProtocol(),
+                                    svc.getHost(),
+                                    svc.getPort(),
+                                    svc.getPath()
+                            );
+                            api.setEndpointConfig(KongAPIUtil.buildEndpointConfigJson(endpoint, endpoint, false));
+                        }
+                    }
+
+                    api.setAvailableTiers(new HashSet<>(Collections.singleton(new Tier(KongConstants.DEFAULT_TIER))));
+
+                    String selectedAPILevelRateLimitPolicy = null;
+
+                    if (svc == null) {
+                        log.warn("No service found for API: " + apiName + " (ID: " + apiId + ")");
+                        continue; // Skip this API if no service is linked
+                    }
+
+                    // add to linked services to avoid duplicates
+                    linkedServices.add(svc.getId());
+
+                    // Fetch plugin related to services
+                    PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(controlPlaneId,
+                            svc.getId(), KongConstants.DEFAULT_PLUGIN_LIST_LIMIT);
+                    List<KongPlugin> plugins = (pluginsResp != null && pluginsResp.getData() != null)
+                            ? pluginsResp.getData() : Collections.<KongPlugin>emptyList();
+
+                    for (KongPlugin plugin : plugins) {
+                        String pluginType = plugin.getName();
+
+                        if (KongConstants.KONG_CORS_PLUGIN_TYPE.equals(pluginType)) {
+                            api.setCorsConfiguration(KongAPIUtil.kongCorsToWso2Cors(plugin));
+                            continue;
+                        }
+
+                        if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(
+                                pluginType) && selectedAPILevelRateLimitPolicy == null) {
+                            String p = KongAPIUtil.kongRateLimitingToWso2Policy(plugin);
+                            if (p != null) {
+                                selectedAPILevelRateLimitPolicy = p;
+                            }
+                            continue;
+                        }
+
+                        if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(
+                                pluginType) && selectedAPILevelRateLimitPolicy == null) {
+                            String p = KongAPIUtil.kongRateLimitingStandardToWso2Policy(plugin);
+                            if (p != null) {
+                                selectedAPILevelRateLimitPolicy = p;
+                            }
+                        }
+                    }
+                    if (selectedAPILevelRateLimitPolicy != null) {
+                        api.setApiLevelPolicy(selectedAPILevelRateLimitPolicy);
+                    }
+    DiscoveredAPI discoveredAPI = new DiscoveredAPI(api, gson.toJson(api));
                 retrievedAPIs.add(discoveredAPI);
-            }
-
-            // If there are Services without APIs, we can still retrieve them as APIs
-            PagedResponse<KongService> servicesResp = apiGatewayClient.listServices(controlPlaneId,
-                    KongConstants.DEFAULT_SERVICE_LIST_LIMIT);
-            List<KongService> services;
-            if (servicesResp != null && servicesResp.getData() != null) {
-                services = servicesResp.getData();
-            } else {
-                services = java.util.Collections.emptyList();
-            }
-
-            for (KongService svc : services) {
-                // Skip if this service is already linked to an API
-                if (linkedServices.contains(svc.getId())) {
-                    continue;
-                }
-                PagedResponse<KongRoute> resp = apiGatewayClient.listRoutesByServiceId(controlPlaneId, svc.getId(),
-                        KongConstants.DEFAULT_ROUTE_LIST_LIMIT);
-                List<KongRoute> routes = (resp != null && resp.getData() != null) ?
-                        resp.getData() : java.util.Collections.emptyList();
-
-                PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(controlPlaneId,
-                        svc.getId(), KongConstants.DEFAULT_PLUGIN_LIST_LIMIT);
-                List<KongPlugin> plugins = (pluginsResp != null && pluginsResp.getData() != null)
-                        ? pluginsResp.getData() : java.util.Collections.<KongPlugin>emptyList();
-
-                APIIdentifier apiId = new APIIdentifier(KongConstants.DEFAULT_API_PROVIDER, svc.getName(),
-                        KongConstants.DEFAULT_API_VERSION);
-                API api = new API(apiId);
-                api.setDisplayName(svc.getName());
-                api.setContext(svc.getName());
-                api.setContextTemplate(svc.getName().toLowerCase().replace(" ", "-"));
-                api.setUuid(svc.getId());
-                api.setDescription("");
-                api.setOrganization(organization);
-                api.setRevision(false);
-
-                if (svc.getUpdatedAt() != null) {
-                    api.setLastUpdated(Date.from(java.time.Instant.ofEpochSecond(svc.getUpdatedAt())));
-                }
-                if (svc.getCreatedAt() != null) {
-                    api.setCreatedTime(Long.toString(svc.getCreatedAt()));
                 }
 
-                api.setInitiatedFromGateway(true);
-                api.setGatewayVendor(KongConstants.DEFAULT_GATEWAY_VENDOR);
-                api.setGatewayType(environment.getGatewayType());
+                // If there are Services without APIs, we can still retrieve them as APIs
+                PagedResponse<KongService> servicesResp = apiGatewayClient.listServices(controlPlaneId,
+                        KongConstants.DEFAULT_SERVICE_LIST_LIMIT);
+                List<KongService> services;
+                if (servicesResp != null && servicesResp.getData() != null) {
+                    services = servicesResp.getData();
+                } else {
+                    services = java.util.Collections.emptyList();
+                }
 
-                String vhost = environment.getVhosts() != null && !environment.getVhosts().isEmpty() ?
-                        environment.getVhosts().get(0).getHost() :
-                        KongConstants.DEFAULT_VHOST;
-
-                String apiDefinition = KongAPIUtil.buildOasFromRoutes(svc, routes, vhost);
-                api.setSwaggerDefinition(apiDefinition);
-                String endpoint = KongAPIUtil.buildEndpointUrl(svc.getProtocol(), svc.getHost(), svc.getPort(),
-                        svc.getPath());
-                api.setEndpointConfig(KongAPIUtil.buildEndpointConfigJson(endpoint, endpoint, false));
-                api.setAvailableTiers(
-                        new HashSet<>(java.util.Collections.singleton(new Tier(KongConstants.DEFAULT_TIER))));
-
-                String selectedAPILevelRateLimitPolicy = null;
-
-                for (KongPlugin plugin : plugins) {
-                    String pluginType = plugin.getName();
-
-                    if (KongConstants.KONG_CORS_PLUGIN_TYPE.equals(pluginType)) {
-                        api.setCorsConfiguration(KongAPIUtil.kongCorsToWso2Cors(plugin));
+                for (KongService svc : services) {
+                    // Skip if this service is already linked to an API
+                    if (linkedServices.contains(svc.getId())) {
                         continue;
                     }
+                    PagedResponse<KongRoute> resp = apiGatewayClient.listRoutesByServiceId(controlPlaneId, svc.getId(),
+                            KongConstants.DEFAULT_ROUTE_LIST_LIMIT);
+                    List<KongRoute> routes = (resp != null && resp.getData() != null) ?
+                            resp.getData() : java.util.Collections.emptyList();
 
-                    if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(
-                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
-                        String p = KongAPIUtil.kongRateLimitingToWso2Policy(plugin);
-                        if (p != null) {
-                            selectedAPILevelRateLimitPolicy = p;
-                        }
-                        continue;
+                    PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(controlPlaneId,
+                            svc.getId(), KongConstants.DEFAULT_PLUGIN_LIST_LIMIT);
+                    List<KongPlugin> plugins = (pluginsResp != null && pluginsResp.getData() != null)
+                            ? pluginsResp.getData() : java.util.Collections.<KongPlugin>emptyList();
+
+                    APIIdentifier apiId = new APIIdentifier(KongConstants.DEFAULT_API_PROVIDER, svc.getName(),
+                            KongConstants.DEFAULT_API_VERSION);
+                    API api = new API(apiId);
+                    api.setDisplayName(svc.getName());
+                    api.setContext(svc.getName());
+                    api.setContextTemplate(svc.getName().toLowerCase().replace(" ", "-"));
+                    api.setUuid(svc.getId());
+                    api.setDescription("");
+                    api.setOrganization(organization);
+                    api.setRevision(false);
+
+                    if (svc.getUpdatedAt() != null) {
+                        api.setLastUpdated(Date.from(java.time.Instant.ofEpochSecond(svc.getUpdatedAt())));
+                    }
+                    if (svc.getCreatedAt() != null) {
+                        api.setCreatedTime(Long.toString(svc.getCreatedAt()));
                     }
 
-                    if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(
-                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
-                        String p = KongAPIUtil.kongRateLimitingStandardToWso2Policy(plugin);
-                        if (p != null) {
-                            selectedAPILevelRateLimitPolicy = p;
+                    api.setInitiatedFromGateway(true);
+                    api.setGatewayVendor(KongConstants.DEFAULT_GATEWAY_VENDOR);
+                    api.setGatewayType(environment.getGatewayType());
+
+                    String vhost = environment.getVhosts() != null && !environment.getVhosts().isEmpty() ?
+                            environment.getVhosts().get(0).getHost() :
+                            KongConstants.DEFAULT_VHOST;
+
+                    String apiDefinition = KongAPIUtil.buildOasFromRoutes(svc, routes, vhost);
+                    api.setSwaggerDefinition(apiDefinition);
+                    String endpoint = KongAPIUtil.buildEndpointUrl(svc.getProtocol(), svc.getHost(), svc.getPort(),
+                            svc.getPath());
+                    api.setEndpointConfig(KongAPIUtil.buildEndpointConfigJson(endpoint, endpoint, false));
+                    api.setAvailableTiers(
+                            new HashSet<>(java.util.Collections.singleton(new Tier(KongConstants.DEFAULT_TIER))));
+
+                    String selectedAPILevelRateLimitPolicy = null;
+
+                    for (KongPlugin plugin : plugins) {
+                        String pluginType = plugin.getName();
+
+                        if (KongConstants.KONG_CORS_PLUGIN_TYPE.equals(pluginType)) {
+                            api.setCorsConfiguration(KongAPIUtil.kongCorsToWso2Cors(plugin));
+                            continue;
+                        }
+
+                        if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(
+                                pluginType) && selectedAPILevelRateLimitPolicy == null) {
+                            String p = KongAPIUtil.kongRateLimitingToWso2Policy(plugin);
+                            if (p != null) {
+                                selectedAPILevelRateLimitPolicy = p;
+                            }
+                            continue;
+                        }
+
+                        if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(
+                                pluginType) && selectedAPILevelRateLimitPolicy == null) {
+                            String p = KongAPIUtil.kongRateLimitingStandardToWso2Policy(plugin);
+                            if (p != null) {
+                                selectedAPILevelRateLimitPolicy = p;
+                            }
                         }
                     }
-                }
-                if (selectedAPILevelRateLimitPolicy != null) {
-                    api.setApiLevelPolicy(selectedAPILevelRateLimitPolicy);
-                }
-                DiscoveredAPI discoveredAPI = new DiscoveredAPI(api, gson.toJson(api));
+                    if (selectedAPILevelRateLimitPolicy != null) {
+                        api.setApiLevelPolicy(selectedAPILevelRateLimitPolicy);
+                    }
+                    DiscoveredAPI discoveredAPI = new DiscoveredAPI(api, gson.toJson(api));
                 retrievedAPIs.add(discoveredAPI);
+                }
+                return retrievedAPIs;
+            } catch (KongGatewayException e) {
+                log.error("Kong Konnect discovery failed (status " + e.getStatusCode() + "): " + e.getMessage(), e);
+                return Collections.emptyList();
+            } catch (feign.FeignException e) {
+                log.error("Kong Konnect discovery failed (status " + e.status() + "): " + e.getMessage(), e);
+                return Collections.emptyList();
+            } catch (Exception ex) {
+                log.error("Unexpected error during Kong Konnect discovery: " + ex.getMessage(), ex);
+                return Collections.emptyList();
             }
-            return retrievedAPIs;
         } else {
             return Collections.emptyList();
         }

@@ -31,6 +31,7 @@ public class KongService {
     private String path;
     private Integer port;
     private String protocol;
+    private boolean enabled;
 
     @SerializedName("created_at") private Long createdAt;
     @SerializedName("updated_at") private Long updatedAt;
@@ -99,4 +100,11 @@ public class KongService {
         this.updatedAt = updatedAt;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
+    }
 }
