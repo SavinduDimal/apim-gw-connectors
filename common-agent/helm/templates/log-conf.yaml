@@ -24,8 +24,8 @@ data:
       k8ResourceEndpoint = "{{ .Values.dataPlane.k8ResourceEndpoint }}"
       namespace = "{{ .Values.dataPlane.namespace }}"
       gatewayClassName = "{{ .Values.dataPlane.gatewayClassName }}"
-      GatewayHTTPSPort = {{ .Values.dataPlane.GatewayHTTPSPort | default 443 }}
-      GatewayHTTPPort = {{ .Values.dataPlane.GatewayHTTPPort | default 80 }}
+      GatewayHTTPSPort = {{ .Values.dataPlane.GatewayHTTPSPort | default 0 }}
+      GatewayHTTPPort = {{ .Values.dataPlane.GatewayHTTPPort | default 0 }}
 
     [metrics]
       enabled = {{.Values.metrics.enabled}}

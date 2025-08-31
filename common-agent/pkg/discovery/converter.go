@@ -76,6 +76,7 @@ func GenerateOpenAPIDefinition(httpRoutes []*unstructured.Unstructured, apiUUID 
 	serverSet := make(map[string]struct{})
 	var allPaths []string // To collect paths for basePath extraction
 	httpsPort := conf.DataPlane.GatewayHTTPSPort
+	httpPort := conf.DataPlane.GatewayHTTPPort
 	for _, route := range httpRoutes {
 		hostnames, found, err := unstructured.NestedSlice(route.Object, "spec", "hostnames")
 		if err != nil {
@@ -87,10 +88,24 @@ func GenerateOpenAPIDefinition(httpRoutes []*unstructured.Unstructured, apiUUID 
 				if h, ok := hostname.(string); ok && h != "" {
 					if _, exists := serverSet[h]; !exists {
 						var serverURL string
-						if httpsPort != 0 && httpsPort != 443 {
-							serverURL = fmt.Sprintf("https://%s:%d", h, httpsPort)
+						var scheme string
+						var port int
+
+						if httpsPort != 0 {
+							scheme = "https"
+							port = httpsPort
+						} else if httpPort != 0 {
+							scheme = "http"
+							port = httpPort
 						} else {
-							serverURL = fmt.Sprintf("https://%s", h)
+							scheme = "https"
+							port = 443
+						}
+						isStandardPort := (scheme == "https" && port == 443) || (scheme == "http" && port == 80)
+						if isStandardPort {
+							serverURL = fmt.Sprintf("%s://%s", scheme, h)
+						} else {
+							serverURL = fmt.Sprintf("%s://%s:%d", scheme, h, port)
 						}
 						servers = append(servers, server{URL: serverURL})
 						serverSet[h] = struct{}{}

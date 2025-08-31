@@ -42,7 +42,7 @@ controlPlane:
   # internalKeyIssuer: https://am.wso2.com:443/oauth2/token
 dataPlane:
   enabled: true
-  namespace: kong
+  namespace: apk
   # gatewayClassName: kong
   # GatewayHTTPSPort: 8443
   # GatewayHTTPPort: 8000
