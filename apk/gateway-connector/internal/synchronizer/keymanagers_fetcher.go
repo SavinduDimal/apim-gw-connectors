@@ -77,7 +77,6 @@ func FetchKeyManagersOnStartUp(c client.Client) {
 					K8sBackendPort:      backendPort,
 					K8sBackendNamespace: namespace,
 				})
-				//!!!TODO: Update the logic to sync with KM and dataplane
 				err := CreateOrUpdateBackendAndBackendTLSForKMs(km, backendPort, backendName, namespace, hostname, c)
 				if err != nil {
 					logger.LoggerSynchronizer.Errorf("Error creating backend and backend TLS for KM: %+v", err)

@@ -198,6 +198,8 @@ type SubtypeConfiguration struct {
 // Configuration holds the configuration details for the subtype
 type Configuration struct {
 	LLMProviderID string `json:"llmProviderId"`
+	LLMProviderName string `json:"llmProviderName"`
+	LLMProviderAPIVersion string `json:"llmProviderApiVersion"`
 }
 
 // APIYaml is a wrapper struct for YAML representation of an API.

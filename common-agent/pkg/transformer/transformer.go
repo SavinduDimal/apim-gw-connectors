@@ -138,9 +138,10 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints st
 			return "", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, err
 		}
 		sha1ValueforCRName := config.LLMProviderID
+		logger.LoggerTransformer.Debugf("AI Provider Config info: %+v", config)
 		apk.AIProvider = &AIProvider{
 			Name:       sha1ValueforCRName,
-			APIVersion: "1",
+			APIVersion: config.LLMProviderAPIVersion,
 		}
 	}
 

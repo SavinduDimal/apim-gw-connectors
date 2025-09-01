@@ -32,6 +32,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"io"
@@ -184,6 +185,7 @@ func GenerateCRs(apkConf string, apiDefinition string, certContainer transformer
 				continue
 			}
 			k8sArtifact.HTTPRoutes[httpRoute.ObjectMeta.Name] = &httpRoute
+			logger.LoggerTransformer.Infof("HTTPRoute YAML: \n%s\n", string(yamlData))
 
 		case "HTTPRouteFilter":
 			var httpRouteFilter gatewayv1alpha1.HTTPRouteFilter
@@ -504,7 +506,10 @@ func createEndpointSecrets(secretDataList []transformer.EndpointSecurityConfig, 
 // Get API name from any RouteMetadata in the map
 func getAPINameFromRouteMetadata(k8sArtifact *K8sArtifacts) string {
 	if k8sArtifact.RouteMetadata != nil && k8sArtifact.RouteMetadata.Spec.API.Name != "" {
-		return k8sArtifact.RouteMetadata.Spec.API.Name
+		lower := strings.ToLower(k8sArtifact.RouteMetadata.Spec.API.Name)
+		reg := regexp.MustCompile(`[^a-z0-9]+`)
+		sanitized := reg.ReplaceAllString(lower, "")
+		return sanitized
 	}
 	return "" // fallback if no RouteMetadata found
 }

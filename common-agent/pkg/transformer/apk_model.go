@@ -139,8 +139,8 @@ type VHost struct {
 
 // AIProvider represents the AI provider configuration.
 type AIProvider struct {
-	Name       string `yaml:"name,omitempty"`
-	APIVersion string `yaml:"apiVersion,omitempty"`
+	Name       string `json:"name,omitempty" yaml:"name,omitempty"`
+	APIVersion string `json:"apiVersion,omitempty" yaml:"apiVersion,omitempty"`
 }
 
 // // Claim represents a claim mapping between local and remote claims.
