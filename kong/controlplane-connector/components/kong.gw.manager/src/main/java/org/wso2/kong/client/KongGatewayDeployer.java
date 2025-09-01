@@ -85,7 +85,7 @@ public class KongGatewayDeployer implements GatewayDeployer {
             return KongAPIUtil.getAPIExecutionURLForKubernetes(externalReference, null);
         }
         String vhost = environment.getVhosts() != null && !environment.getVhosts().isEmpty()
-                ? environment.getVhosts().get(0).getHost() : "example.com";
+                ? environment.getVhosts().get(0).getHost() : KongConstants.DEFAULT_VHOST;
         return "https://" + vhost;
     }
 

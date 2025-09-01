@@ -56,6 +56,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * This class implements the FederatedAPIDiscovery interface to discover APIs from Kong Konnect.
@@ -92,7 +93,7 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
 
                 // Bearer token interceptor
                 RequestInterceptor auth = template ->
-                        template.header("Authorization", "Bearer " + authToken);
+                        template.header(KongConstants.AUTHORIZATION_HEADER, KongConstants.BEARER_PREFIX + authToken);
                 apiGatewayClient = Feign.builder()
                         .client(new ApacheFeignHttpClient(httpClient))
                         .encoder(new GsonEncoder())
@@ -111,12 +112,13 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
     public List<API> discoverAPI() {
         if (!Objects.equals(deploymentType, KongConstants.KONG_KUBERNETES_DEPLOYMENT)) {
             // List APIs (V3)
-            KongListResponse<KongAPI> apisResp = apiGatewayClient.listAPIs(1000);
+            KongListResponse<KongAPI> apisResp = apiGatewayClient.listAPIs(KongConstants.DEFAULT_API_LIST_LIMIT);
             List<KongAPI> apis = (apisResp != null && apisResp.getData() != null)
                     ? apisResp.getData() : Collections.<KongAPI>emptyList();
 
             // List implementations (api_id -> service link)
-            KongListResponse<KongAPIImplementation> implResp = apiGatewayClient.listAPIImplementations(1000);
+            KongListResponse<KongAPIImplementation> implResp = apiGatewayClient.listAPIImplementations(
+                    KongConstants.DEFAULT_API_LIST_LIMIT);
             List<KongAPIImplementation> implementations = (implResp != null && implResp.getData() != null)
                     ? implResp.getData() : Collections.<KongAPIImplementation>emptyList();
 
@@ -129,7 +131,7 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
             }
 
             List<API> retrievedAPIs = new ArrayList<>();
-            List<String> linkedServices = new ArrayList<>();
+            Set<String> linkedServices = new HashSet<>();
 
             // Iterate APIs
             for (KongAPI kongAPI : apis) {
@@ -139,7 +141,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 String apiId = kongAPI.getId();
 
                 // WSO2 API object
-                APIIdentifier apiIdentifier = new APIIdentifier("admin", apiName, apiVersion);
+                APIIdentifier apiIdentifier = new APIIdentifier(KongConstants.DEFAULT_API_PROVIDER, apiName,
+                        apiVersion);
                 API api = new API(apiIdentifier);
                 api.setDisplayName(apiName);
                 api.setContext(KongAPIUtil.ensureLeadingSlash(apiContext));
@@ -149,7 +152,7 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 api.setOrganization(organization);
                 api.setRevision(false);
                 api.setInitiatedFromGateway(true);
-                api.setGatewayVendor("external");
+                api.setGatewayVendor(KongConstants.DEFAULT_GATEWAY_VENDOR);
                 api.setGatewayType(environment.getGatewayType());
 
                 // Fetch and set OAS definition (first spec id if present)
@@ -183,7 +186,7 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                     }
                 }
 
-                api.setAvailableTiers(new HashSet<>(Collections.singleton(new Tier("Unlimited"))));
+                api.setAvailableTiers(new HashSet<>(Collections.singleton(new Tier(KongConstants.DEFAULT_TIER))));
 
                 String selectedAPILevelRateLimitPolicy = null;
 
@@ -196,8 +199,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 linkedServices.add(svc.getId());
 
                 // Fetch plugin related to services
-                PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(
-                        controlPlaneId, svc.getId(), 100);
+                PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(controlPlaneId,
+                        svc.getId(), KongConstants.DEFAULT_PLUGIN_LIST_LIMIT);
                 List<KongPlugin> plugins = (pluginsResp != null && pluginsResp.getData() != null)
                         ? pluginsResp.getData() : Collections.<KongPlugin>emptyList();
 
@@ -209,8 +212,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                         continue;
                     }
 
-                    if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(pluginType)
-                            && selectedAPILevelRateLimitPolicy == null) {
+                    if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(
+                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
                         String p = KongAPIUtil.kongRateLimitingToWso2Policy(plugin);
                         if (p != null) {
                             selectedAPILevelRateLimitPolicy = p;
@@ -218,8 +221,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                         continue;
                     }
 
-                    if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(pluginType)
-                            && selectedAPILevelRateLimitPolicy == null) {
+                    if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(
+                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
                         String p = KongAPIUtil.kongRateLimitingStandardToWso2Policy(plugin);
                         if (p != null) {
                             selectedAPILevelRateLimitPolicy = p;
@@ -233,7 +236,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
             }
 
             // If there are Services without APIs, we can still retrieve them as APIs
-            PagedResponse<KongService> servicesResp = apiGatewayClient.listServices(controlPlaneId, 1000);
+            PagedResponse<KongService> servicesResp = apiGatewayClient.listServices(controlPlaneId,
+                    KongConstants.DEFAULT_SERVICE_LIST_LIMIT);
             List<KongService> services;
             if (servicesResp != null && servicesResp.getData() != null) {
                 services = servicesResp.getData();
@@ -247,16 +251,17 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                     continue;
                 }
                 PagedResponse<KongRoute> resp = apiGatewayClient.listRoutesByServiceId(controlPlaneId, svc.getId(),
-                        1000);
+                        KongConstants.DEFAULT_ROUTE_LIST_LIMIT);
                 List<KongRoute> routes = (resp != null && resp.getData() != null) ?
                         resp.getData() : java.util.Collections.emptyList();
 
-                PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(
-                        controlPlaneId, svc.getId(), 100);
+                PagedResponse<KongPlugin> pluginsResp = apiGatewayClient.listPluginsByServiceId(controlPlaneId,
+                        svc.getId(), KongConstants.DEFAULT_PLUGIN_LIST_LIMIT);
                 List<KongPlugin> plugins = (pluginsResp != null && pluginsResp.getData() != null)
                         ? pluginsResp.getData() : java.util.Collections.<KongPlugin>emptyList();
 
-                APIIdentifier apiId = new APIIdentifier("admin", svc.getName(), "v1");
+                APIIdentifier apiId = new APIIdentifier(KongConstants.DEFAULT_API_PROVIDER, svc.getName(),
+                        KongConstants.DEFAULT_API_VERSION);
                 API api = new API(apiId);
                 api.setDisplayName(svc.getName());
                 api.setContext(svc.getName());
@@ -274,18 +279,20 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 }
 
                 api.setInitiatedFromGateway(true);
-                api.setGatewayVendor("external");
+                api.setGatewayVendor(KongConstants.DEFAULT_GATEWAY_VENDOR);
                 api.setGatewayType(environment.getGatewayType());
 
-                String vhost = environment.getVhosts() != null && !environment.getVhosts().isEmpty()
-                        ? environment.getVhosts().get(0).getHost() : "example.com";
+                String vhost = environment.getVhosts() != null && !environment.getVhosts().isEmpty() ?
+                        environment.getVhosts().get(0).getHost() :
+                        KongConstants.DEFAULT_VHOST;
 
                 String apiDefinition = KongAPIUtil.buildOasFromRoutes(svc, routes, vhost);
                 api.setSwaggerDefinition(apiDefinition);
-                String endpoint = KongAPIUtil.buildEndpointUrl(svc.getProtocol(),
-                        svc.getHost(), svc.getPort(), svc.getPath());
+                String endpoint = KongAPIUtil.buildEndpointUrl(svc.getProtocol(), svc.getHost(), svc.getPort(),
+                        svc.getPath());
                 api.setEndpointConfig(KongAPIUtil.buildEndpointConfigJson(endpoint, endpoint, false));
-                api.setAvailableTiers(new HashSet<>(java.util.Collections.singleton(new Tier("Unlimited"))));
+                api.setAvailableTiers(
+                        new HashSet<>(java.util.Collections.singleton(new Tier(KongConstants.DEFAULT_TIER))));
 
                 String selectedAPILevelRateLimitPolicy = null;
 
@@ -297,8 +304,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                         continue;
                     }
 
-                    if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(pluginType)
-                            && selectedAPILevelRateLimitPolicy == null) {
+                    if (KongConstants.KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE.equals(
+                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
                         String p = KongAPIUtil.kongRateLimitingToWso2Policy(plugin);
                         if (p != null) {
                             selectedAPILevelRateLimitPolicy = p;
@@ -306,8 +313,8 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                         continue;
                     }
 
-                    if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(pluginType)
-                            && selectedAPILevelRateLimitPolicy == null) {
+                    if (KongConstants.KONG_RATELIMIT_PLUGIN_TYPE.equals(
+                            pluginType) && selectedAPILevelRateLimitPolicy == null) {
                         String p = KongAPIUtil.kongRateLimitingStandardToWso2Policy(plugin);
                         if (p != null) {
                             selectedAPILevelRateLimitPolicy = p;
