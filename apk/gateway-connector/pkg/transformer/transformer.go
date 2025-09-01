@@ -32,7 +32,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"regexp"
 	"strings"
 
 	"io"
@@ -185,7 +184,6 @@ func GenerateCRs(apkConf string, apiDefinition string, certContainer transformer
 				continue
 			}
 			k8sArtifact.HTTPRoutes[httpRoute.ObjectMeta.Name] = &httpRoute
-			logger.LoggerTransformer.Infof("HTTPRoute YAML: \n%s\n", string(yamlData))
 
 		case "HTTPRouteFilter":
 			var httpRouteFilter gatewayv1alpha1.HTTPRouteFilter
@@ -415,7 +413,7 @@ func generateSHA1Hash(input string) string {
 
 // createConfigMaps returns a marshalled yaml of ConfigMap kind after adding the given values
 func createConfigMaps(certFiles map[string]string, k8sArtifact *K8sArtifacts) {
-	apiName := getAPINameFromRouteMetadata(k8sArtifact)
+	apiName := generateUniqueNameFormAPI(k8sArtifact.RouteMetadata)
 	for confKey, confValue := range certFiles {
 		pathSegments := strings.Split(confKey, ".")
 		configName := pathSegments[0]
@@ -454,7 +452,7 @@ func createConfigMaps(certFiles map[string]string, k8sArtifact *K8sArtifacts) {
 
 // createEndpointSecrets creates and links the secret CRs need to be created for handling the endpoint security
 func createEndpointSecrets(secretDataList []transformer.EndpointSecurityConfig, k8sArtifact *K8sArtifacts) {
-	apiName := getAPINameFromRouteMetadata(k8sArtifact)
+	apiName := generateUniqueNameFormAPI(k8sArtifact.RouteMetadata)
 	createSecret := func(environment string, username, password string, apiKeyValue string, securityType string, endpointUUID string) {
 		var secret corev1.Secret
 		if securityType == "apikey" {
@@ -465,11 +463,11 @@ func createEndpointSecrets(secretDataList []transformer.EndpointSecurityConfig, 
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      strings.Join([]string{apiName, generateSHA1Hash(endpointUUID), environment, "secret"}, "-"),
-					Namespace: "default", //This shouold be changed to get it from configs ->Ex: k8sArtifact.API.Namespace
+					Namespace: k8sArtifact.RouteMetadata.Namespace, //This shouold be changed to get it from configs ->Ex: k8sArtifact.API.Namespace
 					Labels:    make(map[string]string),
 				},
 				Data: map[string][]byte{
-					"apiKey": []byte(apiKeyValue),
+					"APIKey": []byte(apiKeyValue), 
 				},
 			}
 		} else {
@@ -480,7 +478,7 @@ func createEndpointSecrets(secretDataList []transformer.EndpointSecurityConfig, 
 				},
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      strings.Join([]string{apiName, generateSHA1Hash(endpointUUID), environment, "secret"}, "-"),
-					Namespace: "default", //This shouold be changed to get it from configs ->Ex: k8sArtifact.API.Namespace
+					Namespace: k8sArtifact.RouteMetadata.Namespace, //This shouold be changed to get it from configs ->Ex: k8sArtifact.API.Namespace
 					Labels:    make(map[string]string),
 				},
 				Data: map[string][]byte{
@@ -504,12 +502,13 @@ func createEndpointSecrets(secretDataList []transformer.EndpointSecurityConfig, 
 }
 
 // Get API name from any RouteMetadata in the map
-func getAPINameFromRouteMetadata(k8sArtifact *K8sArtifacts) string {
-	if k8sArtifact.RouteMetadata != nil && k8sArtifact.RouteMetadata.Spec.API.Name != "" {
-		lower := strings.ToLower(k8sArtifact.RouteMetadata.Spec.API.Name)
-		reg := regexp.MustCompile(`[^a-z0-9]+`)
-		sanitized := reg.ReplaceAllString(lower, "")
-		return sanitized
+func generateUniqueNameFormAPI(routeMetadata *dpv2alpha1.RouteMetadata) string {
+	if routeMetadata != nil && routeMetadata.Spec.API.Name != "" && routeMetadata.Spec.API.Version != "" && routeMetadata.Spec.API.Organization != "" {
+		concatenatedString := strings.Join([]string{routeMetadata.Spec.API.Organization, routeMetadata.Spec.API.Name, routeMetadata.Spec.API.Version}, "-")
+		hash := sha1.New()
+		hash.Write([]byte(concatenatedString))
+		hashedValue := hash.Sum(nil)
+		return hex.EncodeToString(hashedValue) 
 	}
 	return "" // fallback if no RouteMetadata found
 }

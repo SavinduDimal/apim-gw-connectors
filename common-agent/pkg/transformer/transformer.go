@@ -729,7 +729,7 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 				SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Sandbox.EndpointUUID), "sandbox", "secret"}, "-"),
 				In:             "Header",
 				APIKeyNameKey:  endpointSecurityData.Sandbox.APIKeyIdentifier,
-				APIKeyValueKey: "apiKey",
+				APIKeyValueKey: "APIKey",
 			}
 		} else {
 			sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
@@ -748,7 +748,7 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 				SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Production.EndpointUUID), "production", "secret"}, "-"),
 				In:             "Header",
 				APIKeyNameKey:  endpointSecurityData.Production.APIKeyIdentifier,
-				APIKeyValueKey: "apiKey",
+				APIKeyValueKey: "APIKey",
 			}
 		} else {
 			prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
