@@ -67,24 +67,24 @@ public class KongGatewayConfiguration implements GatewayAgentConfiguration {
         List<ConfigurationDto> configurationDtoList = new ArrayList<>();
 
         List<String> deploymentOptions = new ArrayList<>();
-        deploymentOptions.add(KongConstants.KONG_KUBERNETES_DEPLOYMENT);
         deploymentOptions.add(KongConstants.KONG_STANDALONE_DEPLOYMENT);
+        deploymentOptions.add(KongConstants.KONG_KUBERNETES_DEPLOYMENT);
 
         configurationDtoList.add(new ConfigurationDto("deployment_type", "Deployment Type", "options",
                 "Select the current Kong Gateway deployment: 'Standalone' if it’s running independently on a " +
                         "single server or VM, or 'Kubernetes' if it’s deployed inside a Kubernetes cluster.",
-                "", true, false, deploymentOptions, false));
+                KongConstants.KONG_STANDALONE_DEPLOYMENT, true, false, deploymentOptions, false));
         configurationDtoList
                 .add(new ConfigurationDto("admin_url", "Admin URL", "input", "Admin URL",
-                        "", false, false, Collections.emptyList(), false));
+                        "", true, false, Collections.emptyList(), false));
         configurationDtoList
                 .add(new ConfigurationDto("control_plane_id", "Control Plane ID", "input",
-                        "Control Plane ID", "", false,
+                        "Control Plane ID", "", true,
                         true, Collections.emptyList(), false));
         configurationDtoList
                 .add(new ConfigurationDto("auth_key", "Access Token", "input",
                         "Access Token for Authentication", "",
-                        false, true, Collections.emptyList(), false));
+                        true, true, Collections.emptyList(), false));
         return configurationDtoList;
     }
 
