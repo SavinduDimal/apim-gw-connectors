@@ -27,16 +27,19 @@ import org.wso2.kong.client.util.KongAPIUtil;
 
 import java.util.Collections;
 
-
 /**
  * This class controls the API artifact deployments on the Kong Gateway.
  */
 public class KongGatewayDeployer implements GatewayDeployer {
 
     private Environment environment;
+
     @Override
     public void init(Environment environment) throws APIManagementException {
         this.environment = environment;
+        if (!KongAPIUtil.isKubernetesDeployment(environment)) {
+            // TODO: Need to add support for non kubernetes deployments
+        }
     }
 
     @Override
@@ -49,19 +52,30 @@ public class KongGatewayDeployer implements GatewayDeployer {
         if (KongAPIUtil.isKubernetesDeployment(environment)) {
             return KongAPIUtil.buildEndpointConfigJsonForKubernetes(api, environment);
         }
+        // TODO: Need to add support for non kubernetes deployments
         return null;
     }
 
     @Override
     public boolean undeploy(String externalReference) throws APIManagementException {
-        return true;
+        if (KongAPIUtil.isKubernetesDeployment(environment)) {
+            return true;
+        }
+        // TODO: Need to add support for non kubernetes deployments
+        return false;
     }
 
     @Override
     public GatewayAPIValidationResult validateApi(API api) throws APIManagementException {
         GatewayAPIValidationResult gatewayAPIValidationResult = new GatewayAPIValidationResult();
-        gatewayAPIValidationResult.setValid(true);
-        gatewayAPIValidationResult.setErrors(Collections.<String>emptyList());
+        if (KongAPIUtil.isKubernetesDeployment(environment)) {
+            gatewayAPIValidationResult.setValid(true);
+            gatewayAPIValidationResult.setErrors(Collections.<String>emptyList());
+        } else {
+            // TODO: Need to add support for non kubernetes deployments
+            gatewayAPIValidationResult.setValid(false);
+            gatewayAPIValidationResult.setErrors(Collections.<String>emptyList());
+        }
         return gatewayAPIValidationResult;
     }
 
@@ -71,12 +85,28 @@ public class KongGatewayDeployer implements GatewayDeployer {
             return KongAPIUtil.getAPIExecutionURLForKubernetes(externalReference, null);
         }
         String vhost = environment.getVhosts() != null && !environment.getVhosts().isEmpty()
-                ? environment.getVhosts().get(0).getHost() : "example.com";
+                ? environment.getVhosts().get(0).getHost() : KongConstants.DEFAULT_VHOST;
         return "https://" + vhost;
     }
 
     @Override
-    public void transformAPI(API api) throws APIManagementException {
+    public String getAPIExecutionURL(String externalReference, HttpScheme httpScheme) throws APIManagementException {
+        if (KongAPIUtil.isKubernetesDeployment(environment)) {
+            String protocol = (httpScheme == HttpScheme.HTTP) ?
+                    KongConstants.HTTP_PROTOCOL :
+                    KongConstants.HTTPS_PROTOCOL;
+            return KongAPIUtil.getAPIExecutionURLForKubernetes(externalReference, protocol);
+        }
 
+        // For standalone mode, maintain backward compatibility by calling the legacy method
+        return getAPIExecutionURL(externalReference);
+    }
+
+    @Override
+    public void transformAPI(API api) throws APIManagementException {
+        if (!KongAPIUtil.isKubernetesDeployment(environment)) {
+            // TODO: Need to add support for non kubernetes deployments
+            return;
+        }
     }
 }

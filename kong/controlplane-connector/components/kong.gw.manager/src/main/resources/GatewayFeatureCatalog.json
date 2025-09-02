@@ -16,6 +16,7 @@
         "keyManagerConfig"
       ],
       "resources": [
+        "apiLevelRateLimiting",
         "operationLevelRateLimiting",
         "operationSecurity"
       ],

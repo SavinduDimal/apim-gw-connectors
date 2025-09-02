@@ -52,4 +52,17 @@ public class KongConstants {
     public static final String KONG_CORS_PLUGIN_TYPE = "cors";
     public static final String KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE = "rate-limiting-advanced";
     public static final String KONG_RATELIMIT_PLUGIN_TYPE = "rate-limiting";
+
+    // Commonly used default values and headers
+    public static final String AUTHORIZATION_HEADER = "Authorization";
+    public static final String BEARER_PREFIX = "Bearer ";
+    public static final int DEFAULT_API_LIST_LIMIT = 1000;
+    public static final int DEFAULT_PLUGIN_LIST_LIMIT = 100;
+    public static final int DEFAULT_SERVICE_LIST_LIMIT = 1000;
+    public static final int DEFAULT_ROUTE_LIST_LIMIT = 1000;
+    public static final String DEFAULT_API_PROVIDER = "admin";
+    public static final String DEFAULT_API_VERSION = "v1";
+    public static final String DEFAULT_TIER = "Unlimited";
+    public static final String DEFAULT_GATEWAY_VENDOR = "external";
+    public static final String DEFAULT_VHOST = "example.com";
 }
