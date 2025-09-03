@@ -64,28 +64,32 @@ public class KongGatewayConfiguration implements GatewayAgentConfiguration {
     @Override
     public List<ConfigurationDto> getConnectionConfigurations() {
 
-        List<ConfigurationDto> configurationDtoList = new ArrayList<>();
+        List<ConfigurationDto> standaloneConfigValues = new ArrayList<>();
 
-        List<String> deploymentOptions = new ArrayList<>();
-        deploymentOptions.add(KongConstants.KONG_STANDALONE_DEPLOYMENT);
-        deploymentOptions.add(KongConstants.KONG_KUBERNETES_DEPLOYMENT);
+        standaloneConfigValues.add(
+                new ConfigurationDto(KongConstants.KONG_ADMIN_URL, "Admin URL", "input", "Admin URL", "", true, false,
+                        Collections.emptyList(), false));
+        standaloneConfigValues.add(
+                new ConfigurationDto(KongConstants.KONG_CONTROL_PLANE_ID, "Control Plane ID", "input",
+                        "Control Plane ID", "", true, true, Collections.emptyList(), false));
+        standaloneConfigValues.add(new ConfigurationDto(KongConstants.KONG_AUTH_TOKEN, "Access Token", "input",
+                "Access Token for Authentication", "", true, true, Collections.emptyList(), false));
 
-        configurationDtoList.add(new ConfigurationDto("deployment_type", "Deployment Type", "options",
-                "Select the current Kong Gateway deployment: 'Standalone' if it’s running independently on a " +
-                        "single server or VM, or 'Kubernetes' if it’s deployed inside a Kubernetes cluster.",
-                KongConstants.KONG_STANDALONE_DEPLOYMENT, true, false, deploymentOptions, false));
-        configurationDtoList
-                .add(new ConfigurationDto("admin_url", "Admin URL", "input", "Admin URL",
-                        "", true, false, Collections.emptyList(), false));
-        configurationDtoList
-                .add(new ConfigurationDto("control_plane_id", "Control Plane ID", "input",
-                        "Control Plane ID", "", true,
-                        true, Collections.emptyList(), false));
-        configurationDtoList
-                .add(new ConfigurationDto("auth_key", "Access Token", "input",
-                        "Access Token for Authentication", "",
-                        true, true, Collections.emptyList(), false));
-        return configurationDtoList;
+        List<ConfigurationDto> deploymentValues = new ArrayList<>();
+
+        deploymentValues.add(
+                new ConfigurationDto(KongConstants.KONG_STANDALONE_DEPLOYMENT, KongConstants.KONG_STANDALONE_DEPLOYMENT,
+                        "labelOnly", "Select to use standalone deployment", "", false, false, standaloneConfigValues,
+                        true));
+        deploymentValues.add(
+                new ConfigurationDto(KongConstants.KONG_KUBERNETES_DEPLOYMENT, KongConstants.KONG_KUBERNETES_DEPLOYMENT,
+                        "labelOnly", "Select to use kubernetes deployment", "", false, false, Collections.emptyList(),
+                        true));
+
+        return Collections.singletonList(
+                new ConfigurationDto(KongConstants.KONG_DEPLOYMENT_TYPE, "Deployment Type", "options",
+                        "Select the Kong Gateway deployment type", KongConstants.KONG_STANDALONE_DEPLOYMENT, true,
+                        false, deploymentValues, false));
     }
 
     @Override
