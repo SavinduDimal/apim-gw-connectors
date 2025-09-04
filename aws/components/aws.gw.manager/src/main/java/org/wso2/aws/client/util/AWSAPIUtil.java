@@ -642,11 +642,17 @@ public class AWSAPIUtil {
                 .restApiId(restApiId)
                 .build());
 
-        if (resources.hasItems()) {
+        if (resources.hasItems() && resources.items().get(0).resourceMethods() != null
+                && !resources.items().get(0).resourceMethods().isEmpty()) {
+            String httpMethod = resources.items().get(0).resourceMethods()
+                    .keySet()
+                    .iterator()
+                    .next()
+                    .toString();
             GetIntegrationRequest request = GetIntegrationRequest.builder()
                     .restApiId(restApiId)
                     .resourceId(resources.items().get(0).id())
-                    .httpMethod(resources.items().get(0).resourceMethods().keySet().iterator().next().toString())
+                    .httpMethod(httpMethod)
                     .build();
 
             GetIntegrationResponse response = client.getIntegration(request);
