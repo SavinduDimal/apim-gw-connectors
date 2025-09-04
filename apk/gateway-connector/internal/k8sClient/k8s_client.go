@@ -476,12 +476,9 @@ func DeleteAIProviderCR(aiProviderName string, k8sClient client.Client) {
 // UpdateRateLimitPolicyCR applies the updated policy details to all the RateLimitPolicies struct which has the provided label to the Kubernetes cluster.
 func UpdateRateLimitPolicyCR(policy eventhubTypes.RateLimitPolicy, k8sClient client.Client) {
 	conf, _ := config.ReadConfigs()
-	policyName := utils.GetSha1Value(policy.Name)
-	policyOrganization := utils.GetSha1Value(policy.TenantDomain)
-
 	// retrieve all RateLimitPolicies from the Kubernetes cluster with the provided label selector "rateLimitPolicyName"
 	rlBackendTrafficPolicyList := &gatewayv1alpha1.BackendTrafficPolicyList{}
-	labelMap := map[string]string{"rateLimitPolicyName": policyName, "organization": policyOrganization}
+	labelMap := map[string]string{"kgw.wso2.com/cpInitiated": "true", "kgw.wso2.com/organization": policy.TenantDomain}
 	// Create a list option with the label selector
 	listOption := &client.ListOptions{
 		Namespace:     conf.DataPlane.Namespace,
@@ -495,15 +492,15 @@ func UpdateRateLimitPolicyCR(policy eventhubTypes.RateLimitPolicy, k8sClient cli
 		loggers.LoggerK8sClient.Info("No Rate Limit BackendTrafficPolicy CRs found to update")
 		return
 	}
-	loggers.LoggerK8sClient.Infof("Rate Limit BackendTrafficPolicy CR list retrieved: %v", rlBackendTrafficPolicyList.Items)
+	loggers.LoggerK8sClient.Debugf("Rate Limit BackendTrafficPolicy CR list retrieved: %+v", rlBackendTrafficPolicyList.Items)
 	for _, rlBackendTrafficPolicy := range rlBackendTrafficPolicyList.Items {
 		rlBackendTrafficPolicy.Spec.RateLimit.Global.Rules[0].Limit.Requests = uint(policy.DefaultLimit.RequestCount.RequestCount)
 		rlBackendTrafficPolicy.Spec.RateLimit.Global.Rules[0].Limit.Unit = gatewayv1alpha1.RateLimitUnit(policy.DefaultLimit.RequestCount.TimeUnit)
-		loggers.LoggerK8sClient.Infof("Rate Limit BackendTrafficPolicy CR updated: %v", rlBackendTrafficPolicy)
+		loggers.LoggerK8sClient.Debugf("Rate Limit BackendTrafficPolicy CR updated: %+v", rlBackendTrafficPolicy)
 		if err := k8sClient.Update(context.Background(), &rlBackendTrafficPolicy); err != nil {
-			loggers.LoggerK8sClient.Errorf("Unable to update Rate Limit BackendTrafficPolicy CR: %v", err)
+			loggers.LoggerK8sClient.Errorf("Unable to update Rate Limit BackendTrafficPolicy CR: %+v", err)
 		} else {
-			loggers.LoggerK8sClient.Infof("Rate Limit BackendTrafficPolicy CR updated: %v", rlBackendTrafficPolicy.Name)
+			loggers.LoggerK8sClient.Infof("Rate Limit BackendTrafficPolicy CR updated: %+v", rlBackendTrafficPolicy.Name)
 		}
 	}
 }
