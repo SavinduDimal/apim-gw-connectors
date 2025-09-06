@@ -197,11 +197,21 @@ func updateSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 				return
 			}
 		case kongConstants.SubscriptionStateProdOnlyBlocked:
-			if err := utils.RetryKongCRUpdate(func() error {
-				return internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, environment, c, conf, credentials, nil)
-			}, kongConstants.UpdateConsumerCredentialProdBlockedTask+environment, kongConstants.MaxRetries); err != nil {
-				logger.LoggerEvents.Errorf("Failed to enable %s credentials for prod-only-blocked: %v", environment, err)
-				return
+			if environment == constants.ProductionType {
+				if err := utils.RetryKongCRUpdate(func() error {
+					return internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, environment, c, conf, nil, credentials)
+				}, kongConstants.UpdateConsumerCredentialProdBlockedTask+environment, kongConstants.MaxRetries); err != nil {
+					logger.LoggerEvents.Errorf("Failed to enable %s credentials for prod-only-blocked: %v", environment, err)
+					return
+				}
+			} else {
+				if err := utils.RetryKongCRUpdate(func() error {
+					return internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, environment, c, conf, credentials, nil)
+				}, kongConstants.UpdateConsumerCredentialProdBlockedTask+environment, kongConstants.MaxRetries); err != nil {
+					logger.LoggerEvents.Errorf("Failed to enable %s credentials for prod-only-blocked: %v", environment, err)
+					return
+				}
+
 			}
 		case kongConstants.SubscriptionStateUnblocked:
 			if err := utils.RetryKongCRUpdate(func() error {
