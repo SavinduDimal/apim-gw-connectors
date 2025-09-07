@@ -125,6 +125,30 @@ type InterceptorService struct {
 
 func (s InterceptorService) isParameter() {}
 
+// LuaInterceptor represents the configuration for Lua interceptor policies.
+type LuaInterceptor struct {
+	Name              string `yaml:"name,omitempty"`
+	SourceCode        string `yaml:"sourceCode,omitempty"`
+	SourceCodeRef     string `yaml:"sourceCodeRef,omitempty"`
+	MountInConfigMap  bool   `yaml:"mountInConfigMap,omitempty"`
+}
+
+func (l LuaInterceptor) isParameter() {}
+
+// WASMInterceptor represents the configuration for WASM interceptor policies.
+type WASMInterceptor struct {
+	Name             string   `yaml:"name,omitempty"`
+	RootID           string   `yaml:"rootId,omitempty"`
+	URL              string   `yaml:"url,omitempty"`
+	Image            string   `yaml:"image,omitempty"`
+	ImagePullPolicy  string   `yaml:"imagePullPolicy,omitempty"`
+	Config           string   `yaml:"config,omitempty"`
+	FailOpen         bool     `yaml:"failOpen,omitempty"`
+	HostKeys         []string `yaml:"hostKeys,omitempty"`
+}
+
+func (w WASMInterceptor) isParameter() {}
+
 // BackendJWT holds configuration details for configuring JWT for backend
 type BackendJWT struct {
 	Encoding         string `yaml:"encoding,omitempty"`

@@ -93,6 +93,8 @@ const (
 	requestRedirectPolicy = "RequestRedirect"
 	requestMirrorPolicy   = "RequestMirror"
 	modelBasedRoundRobin  = "ModelBasedRoundRobin"
+	luaInterceptorPolicy  = "LuaInterceptor"
+	wasmInterceptorPolicy = "WASMInterceptor"
 
 	// APK BackendJWT parameter constants
 	base64url = "Base64url"

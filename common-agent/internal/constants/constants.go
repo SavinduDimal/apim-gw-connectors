@@ -27,6 +27,8 @@ const (
 	RedirectRequest         = "apkRedirectRequest"
 	ModelWeightedRoundRobin = "modelWeightedRoundRobin"
 	ModelRoundRobin         = "modelRoundRobin"
+	LuaInterceptorService  = "apkLuaInterceptorService"
+	WASMInterceptorService = "apkWASMInterceptorService"
 
 	// Version constants
 	V1 = "v1"

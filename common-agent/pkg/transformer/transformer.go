@@ -298,7 +298,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints st
 // Generate the interceptor policy if request or response policy exists
 func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []APIMOperationPolicy, resPolicies []APIMOperationPolicy, endpointList []Endpoint, defaultEndpointList []Endpoint) (*[]OperationPolicy, *[]OperationPolicy) {
 	var requestPolicyList, responsePolicyList []OperationPolicy
-	var interceptorParams *InterceptorService
+	// var interceptorParams *InterceptorService
 	var requestInterceptorPolicy, responseInterceptorPolicy, requestBackendJWTPolicy OperationPolicy
 	var mirrorRequestPolicy OperationPolicy
 	var mirrorUrls []string
@@ -306,57 +306,67 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 	if reqPolicyCount > 0 {
 		for _, reqPolicy := range reqPolicies {
 			logger.LoggerTransformer.Debugf("Request Policy: %v", reqPolicy)
-			if strings.HasSuffix(reqPolicy.PolicyName, constants.InterceptorService) {
-				logger.LoggerTransformer.Debugf("Interceptor Type Request Policy: %v", reqPolicy)
-				logger.LoggerTransformer.Debugf("Interceptor Service URL: %v", reqPolicy.Parameters[interceptorServiceURL])
-				logger.LoggerTransformer.Debugf("Interceptor Includes: %v", reqPolicy.Parameters[includes])
-				interceptorServiceURL := reqPolicy.Parameters[interceptorServiceURL].(string)
-				includes := reqPolicy.Parameters[includes].(string)
-				substrings := strings.Split(includes, ",")
-				bodyEnabled := false
-				headerEnabled := false
-				trailersEnabled := false
-				contextEnabled := false
-				sslEnabled := false
-				tlsSecretName := ""
-				tlsSecretKey := ""
-				for _, substring := range substrings {
-					if strings.Contains(substring, requestHeader) {
-						headerEnabled = true
-					} else if strings.Contains(substring, requestBody) {
-						bodyEnabled = true
-					} else if strings.Contains(substring, requestTrailers) {
-						trailersEnabled = true
-					} else if strings.Contains(substring, requestContext) {
-						contextEnabled = true
-					}
-				}
+			// if strings.HasSuffix(reqPolicy.PolicyName, constants.InterceptorService) {
+			// 	logger.LoggerTransformer.Debugf("Interceptor Type Request Policy: %v", reqPolicy)
+			// 	logger.LoggerTransformer.Debugf("Interceptor Service URL: %v", reqPolicy.Parameters[interceptorServiceURL])
+			// 	logger.LoggerTransformer.Debugf("Interceptor Includes: %v", reqPolicy.Parameters[includes])
+			// 	interceptorServiceURL := reqPolicy.Parameters[interceptorServiceURL].(string)
+			// 	includes := reqPolicy.Parameters[includes].(string)
+			// 	substrings := strings.Split(includes, ",")
+			// 	bodyEnabled := false
+			// 	headerEnabled := false
+			// 	trailersEnabled := false
+			// 	contextEnabled := false
+			// 	sslEnabled := false
+			// 	tlsSecretName := ""
+			// 	tlsSecretKey := ""
+			// 	for _, substring := range substrings {
+			// 		if strings.Contains(substring, requestHeader) {
+			// 			headerEnabled = true
+			// 		} else if strings.Contains(substring, requestBody) {
+			// 			bodyEnabled = true
+			// 		} else if strings.Contains(substring, requestTrailers) {
+			// 			trailersEnabled = true
+			// 		} else if strings.Contains(substring, requestContext) {
+			// 			contextEnabled = true
+			// 		}
+			// 	}
 
-				if strings.Contains(interceptorServiceURL, https) {
-					sslEnabled = true
-				}
+			// 	if strings.Contains(interceptorServiceURL, https) {
+			// 		sslEnabled = true
+			// 	}
 
-				if sslEnabled {
-					tlsSecretName = reqPolicy.PolicyID + requestInterceptorSecretName
-					tlsSecretKey = tlsKey
-				}
+			// 	if sslEnabled {
+			// 		tlsSecretName = reqPolicy.PolicyID + requestInterceptorSecretName
+			// 		tlsSecretKey = tlsKey
+			// 	}
 
-				interceptorParams = &InterceptorService{
-					BackendURL:      interceptorServiceURL,
-					HeadersEnabled:  headerEnabled,
-					BodyEnabled:     bodyEnabled,
-					TrailersEnabled: trailersEnabled,
-					ContextEnabled:  contextEnabled,
-					TLSSecretName:   tlsSecretName,
-					TLSSecretKey:    tlsSecretKey,
-				}
+			// 	interceptorParams = &InterceptorService{
+			// 		BackendURL:      interceptorServiceURL,
+			// 		HeadersEnabled:  headerEnabled,
+			// 		BodyEnabled:     bodyEnabled,
+			// 		TrailersEnabled: trailersEnabled,
+			// 		ContextEnabled:  contextEnabled,
+			// 		TLSSecretName:   tlsSecretName,
+			// 		TLSSecretKey:    tlsSecretKey,
+			// 	}
 
-				// Create an instance of OperationPolicy
-				requestInterceptorPolicy = OperationPolicy{
-					PolicyName:    interceptorPolicy,
-					PolicyVersion: v1,
-					Parameters:    interceptorParams,
-				}
+			// 	// Create an instance of OperationPolicy
+			// 	requestInterceptorPolicy = OperationPolicy{
+			// 		PolicyName:    interceptorPolicy,
+			// 		PolicyVersion: v1,
+			// 		Parameters:    interceptorParams,
+			// 	}
+			// }
+			if reqPolicy.PolicyName == constants.LuaInterceptorService {
+				logger.LoggerTransformer.Infof("Lua Interceptor Type Request Policy: %+v", reqPolicy)
+				luaPolicy := mapLuaInterceptorPolicy(reqPolicy)
+				requestPolicyList = append(requestPolicyList, luaPolicy)
+			} else if reqPolicy.PolicyName == constants.WASMInterceptorService {
+				// Handle WASM Interceptor Service
+				logger.LoggerTransformer.Infof("WASM Interceptor Type Request Policy: %+v", reqPolicy)
+				wasmPolicy := mapWASMInterceptorPolicy(reqPolicy)
+				requestPolicyList = append(requestPolicyList, wasmPolicy)
 			} else if reqPolicy.PolicyName == constants.BackendJWT {
 				encoding := reqPolicy.Parameters[encoding].(string)
 				header := reqPolicy.Parameters[header].(string)
@@ -531,54 +541,64 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 
 	if resPolicyCount > 0 {
 		for _, resPolicy := range resPolicies {
-			if resPolicy.PolicyName == constants.InterceptorService {
-				interceptorServiceURL := resPolicy.Parameters[interceptorServiceURL].(string)
-				includes := resPolicy.Parameters[includes].(string)
-				substrings := strings.Split(includes, ",")
-				bodyEnabled := false
-				headerEnabled := false
-				trailersEnabled := false
-				contextEnabled := false
-				sslEnabled := false
-				tlsSecretName := ""
-				tlsSecretKey := ""
-				for _, substring := range substrings {
-					if strings.Contains(substring, requestHeader) {
-						headerEnabled = true
-					} else if strings.Contains(substring, requestBody) {
-						bodyEnabled = true
-					} else if strings.Contains(substring, requestTrailers) {
-						trailersEnabled = true
-					} else if strings.Contains(substring, requestContext) {
-						contextEnabled = true
-					}
-				}
+			// if resPolicy.PolicyName == constants.InterceptorService {
+			// 	interceptorServiceURL := resPolicy.Parameters[interceptorServiceURL].(string)
+			// 	includes := resPolicy.Parameters[includes].(string)
+			// 	substrings := strings.Split(includes, ",")
+			// 	bodyEnabled := false
+			// 	headerEnabled := false
+			// 	trailersEnabled := false
+			// 	contextEnabled := false
+			// 	sslEnabled := false
+			// 	tlsSecretName := ""
+			// 	tlsSecretKey := ""
+			// 	for _, substring := range substrings {
+			// 		if strings.Contains(substring, requestHeader) {
+			// 			headerEnabled = true
+			// 		} else if strings.Contains(substring, requestBody) {
+			// 			bodyEnabled = true
+			// 		} else if strings.Contains(substring, requestTrailers) {
+			// 			trailersEnabled = true
+			// 		} else if strings.Contains(substring, requestContext) {
+			// 			contextEnabled = true
+			// 		}
+			// 	}
 
-				if strings.Contains(interceptorServiceURL, https) {
-					sslEnabled = true
-				}
+			// 	if strings.Contains(interceptorServiceURL, https) {
+			// 		sslEnabled = true
+			// 	}
 
-				if sslEnabled {
-					tlsSecretName = resPolicies[0].PolicyID + responseInterceptorSecretName
-					tlsSecretKey = tlsKey
-				}
+			// 	if sslEnabled {
+			// 		tlsSecretName = resPolicies[0].PolicyID + responseInterceptorSecretName
+			// 		tlsSecretKey = tlsKey
+			// 	}
 
-				interceptorParams = &InterceptorService{
-					BackendURL:      interceptorServiceURL,
-					HeadersEnabled:  headerEnabled,
-					BodyEnabled:     bodyEnabled,
-					TrailersEnabled: trailersEnabled,
-					ContextEnabled:  contextEnabled,
-					TLSSecretName:   tlsSecretName,
-					TLSSecretKey:    tlsSecretKey,
-				}
+			// 	interceptorParams = &InterceptorService{
+			// 		BackendURL:      interceptorServiceURL,
+			// 		HeadersEnabled:  headerEnabled,
+			// 		BodyEnabled:     bodyEnabled,
+			// 		TrailersEnabled: trailersEnabled,
+			// 		ContextEnabled:  contextEnabled,
+			// 		TLSSecretName:   tlsSecretName,
+			// 		TLSSecretKey:    tlsSecretKey,
+			// 	}
 
-				// Create an instance of OperationPolicy
-				responseInterceptorPolicy = OperationPolicy{
-					PolicyName:    interceptorPolicy,
-					PolicyVersion: v1,
-					Parameters:    interceptorParams,
-				}
+			// 	// Create an instance of OperationPolicy
+			// 	responseInterceptorPolicy = OperationPolicy{
+			// 		PolicyName:    interceptorPolicy,
+			// 		PolicyVersion: v1,
+			// 		Parameters:    interceptorParams,
+			// 	}
+			// }
+			if resPolicy.PolicyName == constants.LuaInterceptorService {
+				logger.LoggerTransformer.Debugf("Lua Interceptor Type Response Policy: %v", resPolicy)
+				luaPolicy := mapLuaInterceptorPolicy(resPolicy)
+				responsePolicyList = append(responsePolicyList, luaPolicy)
+			} else if resPolicy.PolicyName == constants.WASMInterceptorService {
+				// Handle WASM Interceptor Service for Response
+				logger.LoggerTransformer.Debugf("WASM Interceptor Type Response Policy: %v", resPolicy)
+				wasmPolicy := mapWASMInterceptorPolicy(resPolicy)
+				responsePolicyList = append(responsePolicyList, wasmPolicy)
 			} else if resPolicy.PolicyName == constants.AddHeader {
 				logger.LoggerTransformer.Debugf("AddHeader Type Response Policy: %v", resPolicy)
 
@@ -969,6 +989,73 @@ func mapAuthConfigs(apiUUID string, authHeader string, configuredAPIKeyHeader st
 		authConfigs = append(authConfigs, apiKeyAuthConfig)
 	}
 	return authConfigs
+}
+
+// mapLuaInterceptorPolicy maps APIM Lua interceptor policy to APK Lua interceptor policy
+func mapLuaInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
+	luaParams := LuaInterceptor{}
+	if name, ok := policy.Parameters["policyName"].(string); ok {
+		luaParams.Name = name
+	}
+	if sourceCode, ok := policy.Parameters["sourceCode"].(string); ok {
+		luaParams.SourceCode = sourceCode
+	}
+	if sourceCodeRef, ok := policy.Parameters["sourceCodeRef"].(string); ok {
+		luaParams.SourceCodeRef = sourceCodeRef
+	}
+	if mountInConfigMap, ok := policy.Parameters["mountInConfigMap"].(bool); ok {
+		luaParams.MountInConfigMap = mountInConfigMap
+	}
+	
+	return OperationPolicy{
+		PolicyName:    luaInterceptorPolicy,
+		PolicyVersion: v1,
+		PolicyID:      policy.PolicyID,
+		Parameters:    luaParams,
+	}
+}
+
+// mapWASMInterceptorPolicy maps APIM WASM interceptor policy to APK WASM interceptor policy
+func mapWASMInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
+	wasmParams := WASMInterceptor{}
+	if name, ok := policy.Parameters["policyName"].(string); ok {
+		wasmParams.Name = name
+	}
+	if rootID, ok := policy.Parameters["rootId"].(string); ok {
+		wasmParams.RootID = rootID
+	}
+	if url, ok := policy.Parameters["wasmpolicyURL"].(string); ok {
+		wasmParams.URL = url
+	}
+	if image, ok := policy.Parameters["wasmpolicyImage"].(string); ok {
+		wasmParams.Image = image
+	}
+	if imagePullPolicy, ok := policy.Parameters["imagePullPolicy"].(string); ok {
+		wasmParams.ImagePullPolicy = imagePullPolicy
+	}
+	if config, ok := policy.Parameters["wasmConfig"].(string); ok {
+		wasmParams.Config = config
+	}
+	if failOpen, ok := policy.Parameters["failOpen"].(bool); ok {
+		wasmParams.FailOpen = failOpen
+	}
+	if hostKeysStr, ok := policy.Parameters["hostKeys"].(string); ok {
+		// Split comma-separated host keys
+		if hostKeysStr != "" {
+			hostKeys := strings.Split(hostKeysStr, ",")
+			for i, key := range hostKeys {
+				hostKeys[i] = strings.TrimSpace(key)
+			}
+			wasmParams.HostKeys = hostKeys
+		}
+	}
+	
+	return OperationPolicy{
+		PolicyName:    wasmInterceptorPolicy,
+		PolicyVersion: v1,
+		PolicyID:      policy.PolicyID,
+		Parameters:    wasmParams,
+	}
 }
 
 func mapKeyManagers(keyManagers []string) []KeyManager {
