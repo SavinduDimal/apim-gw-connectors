@@ -48,7 +48,7 @@ func GenerateCR(api string, organizationID string, apiUUID string, conf *config.
 		logger.LoggerUtils.Errorf("Error while converting kong conf yaml to kong conf type: Error: %+v. \n", err)
 	}
 
-	logger.LoggerUtils.Debugf("GenerateCR|Parsed KongConf: %+v\n", kongConf)
+	logger.LoggerUtils.Debugf("GenerateCR|Parsed KongConf: %+v\n", api)
 
 	apiUniqueID := GetUniqueIDForAPI(kongConf.Name, kongConf.Version, organizationID)
 	k8sArtifact := K8sArtifacts{
@@ -64,6 +64,10 @@ func GenerateCR(api string, organizationID string, apiUUID string, conf *config.
 
 	// handle authentications
 	authentications := *kongConf.Authentication
+
+	oauth2Plugins := make([]string, 0)
+	apiKeyPlugins := make([]string, 0)
+
 	for _, authentication := range authentications {
 		if !authentication.Enabled {
 			continue
@@ -72,12 +76,12 @@ func GenerateCR(api string, organizationID string, apiUUID string, conf *config.
 		// OAuth2 JWT Plugin (for OAuth2 jwt authentication)
 		if authentication.AuthType == kongConstants.OAuth2AuthenticationType {
 			kongJwtPlugin := createAndAddJWTPlugin(&k8sArtifact, nil, kongConstants.APISuffix, authentication)
-			kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
+			oauth2Plugins = append(oauth2Plugins, kongJwtPlugin.ObjectMeta.Name)
 		}
-		// OAuth2 JWT Plugin (for API key authentication)
+		// Key-Auth Plugin (for API key authentication)
 		if authentication.AuthType == kongConstants.APIKeyAuthenticationType {
-			kongJwtPlugin := createAndAddAPIKeyPlugin(&k8sArtifact, nil, kongConstants.APISuffix, authentication)
-			kongPlugins = append(kongPlugins, kongJwtPlugin.ObjectMeta.Name)
+			kongAPIKeyPlugin := createAndAddAPIKeyPlugin(&k8sArtifact, nil, kongConstants.APISuffix, authentication)
+			apiKeyPlugins = append(apiKeyPlugins, kongAPIKeyPlugin.ObjectMeta.Name)
 		}
 	}
 
@@ -113,12 +117,12 @@ func GenerateCR(api string, organizationID string, apiUUID string, conf *config.
 
 	// generate production http routes
 	if endpoints, ok := createdEndpoints[constants.ProductionType]; ok {
-		generateHTTPRoutes(&k8sArtifact, &kongConf, organizationID, endpoints, constants.ProductionType, apiUniqueID, kongPlugins, conf)
+		generateHTTPRoutes(&k8sArtifact, &kongConf, organizationID, endpoints, constants.ProductionType, apiUniqueID, kongPlugins, conf, oauth2Plugins, apiKeyPlugins)
 		logger.LoggerUtils.Debugf("GenerateCR|Production HTTPRoutes generated|%d endpoints\n", len(endpoints))
 	}
 	// generate sandbox http routes
 	if endpoints, ok := createdEndpoints[constants.SandboxType]; ok {
-		generateHTTPRoutes(&k8sArtifact, &kongConf, organizationID, endpoints, constants.SandboxType, apiUniqueID, kongPlugins, conf)
+		generateHTTPRoutes(&k8sArtifact, &kongConf, organizationID, endpoints, constants.SandboxType, apiUniqueID, kongPlugins, conf, oauth2Plugins, apiKeyPlugins)
 		logger.LoggerUtils.Debugf("GenerateCR|Sandbox HTTPRoutes generated|%d endpoints\n", len(endpoints))
 	}
 
@@ -133,7 +137,7 @@ func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]apimTransformer.Enviro
 	logger.LoggerUtils.Debugf("UpdateCRS|Starting CR update|API:%s Revision:%s Environments:%d\n",
 		apiUUID, revisionID, len(*environments))
 
-	organizationHash := generateSHA1Hash(organizationID)
+	organizationHash := GenerateSHA1Hash(organizationID)
 
 	for _, httproute := range k8sArtifact.HTTPRoutes {
 		httproute.ObjectMeta.Labels[kongConstants.OrganizationLabel] = organizationHash
@@ -171,9 +175,9 @@ func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]apimTransformer.Enviro
 }
 
 // generateHTTPRoutes handles the generation of http route resources from kong conf
-func generateHTTPRoutes(k8sArtifact *K8sArtifacts, kongConf *types.APKConf, organizationID string, endpoints []types.EndpointDetails, endpointType string, uniqueID string, kongPlugins []string, conf *config.Config) {
-	logger.LoggerUtils.Debugf("Starting HTTPRoute generation - API Name: %s, API UUID: %s, Organization ID: %s, Endpoint Type: %s, Unique ID: %s, Kong Plugins: %v, Endpoints: %+v, KONG Config Name: %s, KONG Config Version: %s, KONG Config Base Path: %s",
-		k8sArtifact.APIName, k8sArtifact.APIUUID, organizationID, endpointType, uniqueID, kongPlugins, endpoints, kongConf.Name, kongConf.Version, kongConf.BasePath)
+func generateHTTPRoutes(k8sArtifact *K8sArtifacts, kongConf *types.APKConf, organizationID string, endpoints []types.EndpointDetails, endpointType string, uniqueID string, kongPlugins []string, conf *config.Config, oauth2Plugins []string, apiKeyPlugins []string) {
+	logger.LoggerUtils.Debugf("Starting HTTPRoute generation - API Name: %s, API UUID: %s, Organization ID: %s, Endpoint Type: %s, Unique ID: %s, Kong Plugins: %v, OAuth2 Plugins: %v, APIKey Plugins: %v, Endpoints: %+v, KONG Config Name: %s, KONG Config Version: %s, KONG Config Base Path: %s",
+		k8sArtifact.APIName, k8sArtifact.APIUUID, organizationID, endpointType, uniqueID, kongPlugins, oauth2Plugins, apiKeyPlugins, endpoints, kongConf.Name, kongConf.Version, kongConf.BasePath)
 
 	if kongConf.SubscriptionValidation {
 		apiEnvironmentGroup := GenerateACLGroupName(k8sArtifact.APIName, endpointType)
@@ -261,19 +265,51 @@ func generateHTTPRoutes(k8sArtifact *K8sArtifacts, kongConf *types.APKConf, orga
 				k8sArtifact.Services[key] = service
 			}
 
-			// update httproute annotation
-			annotationMap := map[string]string{
-				kongConstants.KongStripPathAnnotation: kongConstants.DefaultStripPathValue,
-				kongConstants.KongPluginsAnnotation:   strings.Join(routeKongPlugins, kongConstants.CommaString),
-			}
-			updateHTTPRouteAnnotations(httpRoute, annotationMap)
+			hasBothAuthTypes := len(oauth2Plugins) > 0 && len(apiKeyPlugins) > 0
 
-			// store httproute in k8s artifacts
-			httpRoute.Labels[kongConstants.RouteTypeField] = kongConstants.APIRouteType
-			httpRoute.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
-			k8sArtifact.HTTPRoutes[httpRoute.ObjectMeta.Name] = httpRoute
-			logger.LoggerUtils.Debugf("HTTPRoute stored successfully - Route Name: %s, API Name: %s, Endpoint Type: %s, Route Kong Plugins: %v, Annotations: %v",
-				httpRoute.ObjectMeta.Name, k8sArtifact.APIName, endpointType, routeKongPlugins, annotationMap)
+			if hasBothAuthTypes {
+				oauth2Route := httpRoute.DeepCopy()
+				oauth2Route.Name = oauth2Route.Name + kongConstants.HTTPRouteAuthTypeOAuth2
+				oauth2RoutePlugins := append(routeKongPlugins, oauth2Plugins...)
+
+				oauth2AnnotationMap := map[string]string{
+					kongConstants.KongStripPathAnnotation: kongConstants.DefaultStripPathValue,
+					kongConstants.KongPluginsAnnotation:   strings.Join(oauth2RoutePlugins, kongConstants.CommaString),
+				}
+				updateHTTPRouteAnnotations(oauth2Route, oauth2AnnotationMap)
+				oauth2Route.Labels[kongConstants.RouteTypeField] = kongConstants.APIRouteType
+				oauth2Route.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
+				k8sArtifact.HTTPRoutes[oauth2Route.ObjectMeta.Name] = oauth2Route
+
+				apiKeyRoute := httpRoute.DeepCopy()
+				apiKeyRoute.Name = apiKeyRoute.Name + kongConstants.HTTPRouteAuthTypeAPIKey
+				apiKeyRoutePlugins := append(routeKongPlugins, apiKeyPlugins...)
+
+				apiKeyAnnotationMap := map[string]string{
+					kongConstants.KongStripPathAnnotation: kongConstants.DefaultStripPathValue,
+					kongConstants.KongPluginsAnnotation:   strings.Join(apiKeyRoutePlugins, kongConstants.CommaString),
+				}
+				updateHTTPRouteAnnotations(apiKeyRoute, apiKeyAnnotationMap)
+				apiKeyRoute.Labels[kongConstants.RouteTypeField] = kongConstants.APIRouteType
+				apiKeyRoute.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
+				// k8sArtifact.HTTPRoutes[apiKeyRoute.ObjectMeta.Name] = apiKeyRoute
+			} else {
+				if len(oauth2Plugins) > 0 {
+					routeKongPlugins = append(routeKongPlugins, oauth2Plugins...)
+				}
+				if len(apiKeyPlugins) > 0 {
+					routeKongPlugins = append(routeKongPlugins, apiKeyPlugins...)
+				}
+
+				annotationMap := map[string]string{
+					kongConstants.KongStripPathAnnotation: kongConstants.DefaultStripPathValue,
+					kongConstants.KongPluginsAnnotation:   strings.Join(routeKongPlugins, kongConstants.CommaString),
+				}
+				updateHTTPRouteAnnotations(httpRoute, annotationMap)
+				httpRoute.Labels[kongConstants.RouteTypeField] = kongConstants.APIRouteType
+				httpRoute.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
+				k8sArtifact.HTTPRoutes[httpRoute.ObjectMeta.Name] = httpRoute
+			}
 		}
 	}
 
@@ -365,7 +401,7 @@ func createAndAddJWTPlugin(k8sArtifact *K8sArtifacts, operation *types.Operation
 
 	headerNames := []string{}
 	queryParamNames := []string{}
-	if authentication.HeaderEnabled {
+	if authentication.Enabled && authentication.HeaderName != kongConstants.EmptyString {
 		headerNames = append(headerNames, authentication.HeaderName)
 	} else if authentication.Enabled {
 		headerNames = append(headerNames, kongConstants.JWTDefaultHeaderName)
@@ -445,7 +481,7 @@ func CreateConsumer(applicationUUID string, environment string, conf *config.Con
 			},
 			Labels: make(map[string]string, 0),
 		},
-		Username: generateSHA1Hash(applicationUUID + environment),
+		Username: GenerateSHA1Hash(applicationUUID + environment),
 	}
 	consumer.Labels[kongConstants.ApplicationUUIDLabel] = applicationUUID
 	if environment != kongConstants.EmptyString {
@@ -477,7 +513,7 @@ func GenerateK8sCredentialSecret(applicationUUID string, identifier string, cred
 }
 
 // GenerateK8sSecret handles the k8s secret generation
-func GenerateK8sSecret(name string, labels map[string]string, data map[string]string) *corev1.Secret {
+func GenerateK8sSecret(name string, organization string, labels map[string]string, data map[string]string) *corev1.Secret {
 	logger.LoggerUtils.Debugf("Generating k8s secret|Name:%s Labels:%d\n", name, len(labels))
 
 	secret := corev1.Secret{
@@ -486,7 +522,7 @@ func GenerateK8sSecret(name string, labels map[string]string, data map[string]st
 			APIVersion: kongConstants.CoreAPIVersion,
 		},
 		ObjectMeta: metav1.ObjectMeta{
-			Name:   PrepareSecretName(name),
+			Name:   PrepareDashedName(name + kongConstants.DashSeparatorString + organization),
 			Labels: labels,
 		},
 		StringData: data,

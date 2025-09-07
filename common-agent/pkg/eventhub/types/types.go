@@ -231,3 +231,21 @@ type Claim struct {
 	RemoteClaim string `json:"remoteClaim" yaml:"remoteClaim"`
 	LocalClaim  string `json:"localClaim" yaml:"localClaim"`
 }
+
+// ApplicationKeyMapping for struct applicationKeyMapping
+type ApplicationKeyMapping struct {
+	ApplicationID   int32  `json:"applicationId"`
+	ApplicationUUID string `json:"applicationUUID"`
+	ConsumerKey     string `json:"consumerKey"`
+	KeyType         string `json:"keyType"`
+	KeyManager      string `json:"keyManager"`
+	TenantID        int32  `json:"tenanId,omitempty"`
+	TenantDomain    string `json:"tenanDomain,omitempty"`
+	TimeStamp       int64  `json:"timeStamp,omitempty"`
+}
+
+// ApplicationKeyMappingList for struct list of applicationKeyMapping
+type ApplicationKeyMappingList struct {
+	Count int                     `json:"count"`
+	List  []ApplicationKeyMapping `json:"list"`
+}

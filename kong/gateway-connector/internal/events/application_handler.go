@@ -24,7 +24,6 @@ import (
 
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/config"
 	eventConstants "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/eventhub/constants"
-	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/k8s-resource-lib/constants"
 	msg "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/messaging"
 	kongConstants "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 	internalk8sClient "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/k8sClient"
@@ -59,15 +58,45 @@ func handleApplicationRegistration(data []byte, c client.Client, conf *config.Co
 		return
 	}
 
+	consumerName := transformer.GenerateConsumerName(applicationRegistrationEvent.ApplicationUUID, strings.ToLower(applicationRegistrationEvent.KeyType))
+	consumer := internalk8sClient.GetKongConsumerCR(consumerName, c, conf)
+
+	if consumer == nil {
+		logger.LoggerEvents.Debugf("Application Registration consumer not found for application UUID %s, skipping creation",
+			applicationRegistrationEvent.ApplicationUUID)
+		return
+	}
+
 	if !belongsToTenant(applicationRegistrationEvent.TenantDomain) {
 		logger.LoggerEvents.Debugf("Application Registration event is dropped due to having non related tenantDomain : %s",
 			applicationRegistrationEvent.TenantDomain)
 		return
 	}
 
-	logger.LoggerEvents.Infof("Processing ApplicationRegistration event for application: %s", applicationRegistrationEvent.ApplicationUUID)
+	processApplicationRegistration(
+		applicationRegistrationEvent.ApplicationUUID,
+		applicationRegistrationEvent.ConsumerKey,
+		applicationRegistrationEvent.KeyManager,
+		applicationRegistrationEvent.TenantDomain,
+		strings.ToLower(applicationRegistrationEvent.KeyType),
+		c,
+		conf,
+	)
+}
 
-	issuerSecrets := internalk8sClient.GetK8sSecrets(map[string]string{kongConstants.TypeLabel: kongConstants.IssuerSecretType}, c, conf)
+// processApplicationRegistration handles issuer secrets, credentials, and consumer updates
+func processApplicationRegistration(applicationUUID, consumerKey, keyManagerName, tenantOrg, environment string, c client.Client, conf *config.Config) {
+	logger.LoggerEvents.Debugf("Received Application Registration Event: applicationUUID=%s, consumerKey=%s, environment=%s",
+		applicationUUID, consumerKey, environment)
+
+	issuerSecrets := internalk8sClient.GetK8sSecrets(
+		map[string]string{
+			kongConstants.TypeLabel:           kongConstants.IssuerSecretType,
+			kongConstants.OrganizationLabel:   transformer.GenerateSHA1Hash(tenantOrg),
+			kongConstants.KeyManagerNameLabel: transformer.PrepareDashedName(keyManagerName),
+		},
+		c, conf,
+	)
 	if len(issuerSecrets) == 0 {
 		logger.LoggerEvents.Errorf("No issuers are found")
 		return
@@ -75,18 +104,23 @@ func handleApplicationRegistration(data []byte, c client.Client, conf *config.Co
 
 	addCredentials := make([]string, 0, len(issuerSecrets))
 	for _, issuerSecret := range issuerSecrets {
-		jwtCredentialSecret := createIssuerKongSecretCredential(issuerSecret, c, conf,
-			applicationRegistrationEvent.ApplicationUUID,
-			applicationRegistrationEvent.ConsumerKey,
-			applicationRegistrationEvent.KeyType)
+		jwtCredentialSecret := createIssuerKongSecretCredential(
+			issuerSecret, c, conf,
+			applicationUUID,
+			consumerKey,
+			environment,
+		)
 		addCredentials = append(addCredentials, jwtCredentialSecret.ObjectMeta.Name)
 	}
 
 	utils.RetryKongCRUpdate(func() error {
 		internalk8sClient.UpdateKongConsumerCredential(
-			applicationRegistrationEvent.ApplicationUUID,
-			strings.ToLower(applicationRegistrationEvent.KeyType),
-			c, conf, addCredentials, nil)
+			applicationUUID,
+			strings.ToLower(environment),
+			c, conf,
+			addCredentials,
+			nil,
+		)
 		return nil
 	}, kongConstants.AddApplicationKeyTaskName, kongConstants.MaxRetries)
 }
@@ -105,7 +139,7 @@ func handleRemoveApplicationKeyMapping(data []byte, c client.Client, conf *confi
 		return
 	}
 
-	logger.LoggerEvents.Infof("Processing RemoveApplicationKeyMapping event for application: %s", applicationRegistrationEvent.ApplicationUUID)
+	logger.LoggerEvents.Debugf("Received Remove Application Key Mapping Event: %+v", applicationRegistrationEvent)
 
 	jwtCredentialSecretName := transformer.GenerateSecretName(
 		applicationRegistrationEvent.ApplicationUUID,
@@ -142,25 +176,19 @@ func handleApplicationEvent(data []byte, c client.Client, conf *config.Config) {
 		return
 	}
 
-	logger.LoggerEvents.Infof("Processing Application event for application: %s", applicationEvent.UUID)
+	logger.LoggerEvents.Debugf("Received Application Event: %+v", applicationEvent)
 
 	switch applicationEvent.Event.Type {
 	case eventConstants.ApplicationCreate:
-		createApplicationConsumerForBothEnvironments(applicationEvent.UUID, c, conf)
+		logger.LoggerEvents.Debugf("Application Create for application UUID %s", applicationEvent.UUID)
 	case eventConstants.ApplicationUpdate:
-		logger.LoggerEvents.Info("Application Update")
+		logger.LoggerEvents.Debugf("Application Update for application UUID %s", applicationEvent.UUID)
 	case eventConstants.ApplicationDelete:
 		internalk8sClient.UndeployAPPCRs(applicationEvent.UUID, c)
 	default:
 		logger.LoggerEvents.Warnf("Application Event Type '%s' is not recognized for the Event under Application UUID %s",
 			applicationEvent.Event.Type, applicationEvent.UUID)
 	}
-}
-
-// createApplicationConsumerForBothEnvironments creates consumers for both production and sandbox environments
-func createApplicationConsumerForBothEnvironments(applicationUUID string, c client.Client, conf *config.Config) {
-	createApplicationConsumer(applicationUUID, c, conf, constants.ProductionType)
-	createApplicationConsumer(applicationUUID, c, conf, constants.SandboxType)
 }
 
 func createIssuerKongSecretCredential(issuerSecret v1.Secret, c client.Client, conf *config.Config, applicationUUID string, consumerKey string, environment string) *v1.Secret {
@@ -189,13 +217,4 @@ func createIssuerKongSecretCredential(issuerSecret v1.Secret, c client.Client, c
 	internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
 
 	return jwtCredentialSecret
-}
-
-func createApplicationConsumer(applicationUUID string, c client.Client, conf *config.Config, environment string) {
-	logger.LoggerEvents.Debugf("Creating application consumer for ApplicationUUID: %s, Environment: %s", applicationUUID, environment)
-
-	consumer := transformer.CreateConsumer(applicationUUID, environment, conf)
-	consumer.Namespace = conf.DataPlane.Namespace
-
-	internalk8sClient.DeployKongConsumerCR(consumer, c)
 }

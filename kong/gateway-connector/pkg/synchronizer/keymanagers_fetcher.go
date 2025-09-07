@@ -100,9 +100,11 @@ func CreateAndDeployKeyManagerSecret(resolvedKeyManager eventhubTypes.ResolvedKe
 		constants.PublicKeyField: publicKey,
 	}
 	secretLabels := map[string]string{
-		constants.TypeLabel: constants.IssuerSecretType,
+		constants.TypeLabel:           constants.IssuerSecretType,
+		constants.OrganizationLabel:   transformer.GenerateSHA1Hash(resolvedKeyManager.Organization),
+		constants.KeyManagerNameLabel: transformer.PrepareDashedName(resolvedKeyManager.Name),
 	}
-	keyManagerSecret := transformer.GenerateK8sSecret(resolvedKeyManager.Name, secretLabels, config)
+	keyManagerSecret := transformer.GenerateK8sSecret(resolvedKeyManager.Name, resolvedKeyManager.Organization, secretLabels, config)
 	keyManagerSecret.Namespace = conf.DataPlane.Namespace
 	k8sclient.DeploySecretCR(keyManagerSecret, c)
 	logger.LoggerSynchronizer.Infof("Successfully deployed key manager secret for: %s", resolvedKeyManager.Name)

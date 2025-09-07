@@ -21,6 +21,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"regexp"
 	"strings"
 
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/k8s-resource-lib/types"
@@ -33,7 +34,7 @@ func GetUniqueIDForAPI(name, version, organization string) string {
 	loggers.LoggerUtils.Debugf("Generating unique ID|Name:%s Version:%s Org:%s\n", name, version, organization)
 
 	concatenatedString := strings.Join([]string{organization, name, version}, constants.DashSeparatorString)
-	return generateSHA1Hash(concatenatedString)
+	return GenerateSHA1Hash(concatenatedString)
 }
 
 // GenerateOperationsMatrix creates a 2D array for operations
@@ -70,12 +71,12 @@ func GeneratePluginCRName(operation *types.Operation, targetRef string, pluginNa
 	loggers.LoggerUtils.Debugf("Generating plugin CR name|Plugin:%s TargetRef:%s\n", pluginName, targetRef)
 
 	if operation != nil {
-		operationTargetHash := generateSHA1Hash(operation.Target + operation.Verb)
+		operationTargetHash := GenerateSHA1Hash(operation.Target + operation.Verb)
 		concatenatedString := pluginName + constants.DashSeparatorString + operationTargetHash
 		return constants.ResourcePrefix + concatenatedString + constants.DashSeparatorString + targetRef
 	}
 
-	serviceTargetHash := generateSHA1Hash(pluginName + targetRef)
+	serviceTargetHash := GenerateSHA1Hash(pluginName + targetRef)
 	concatenatedString := pluginName + constants.DashSeparatorString + serviceTargetHash
 	return constants.RoutePrefix + concatenatedString + constants.DashSeparatorString + targetRef
 }
@@ -84,7 +85,7 @@ func GeneratePluginCRName(operation *types.Operation, targetRef string, pluginNa
 func GeneratePolicyCRName(policyName string, tenantDomain string, pluginName string, policyType string) string {
 	loggers.LoggerUtils.Debugf("Generating policy CR name|Policy:%s Type:%s\n", policyName, policyType)
 
-	serviceTargetHash := generateSHA1Hash(policyName + tenantDomain + pluginName)
+	serviceTargetHash := GenerateSHA1Hash(policyName + tenantDomain + pluginName)
 	return policyType + constants.DashSeparatorString + serviceTargetHash + constants.DashSeparatorString + pluginName
 }
 
@@ -92,7 +93,7 @@ func GeneratePolicyCRName(policyName string, tenantDomain string, pluginName str
 func GenerateConsumerName(applicationUUID string, environment string) string {
 	loggers.LoggerUtils.Debugf("Generating consumer name|App:%s Env:%s\n", applicationUUID, environment)
 
-	consumerHash := generateSHA1Hash(applicationUUID + environment)
+	consumerHash := GenerateSHA1Hash(applicationUUID + environment)
 	return constants.ConsumerPrefix + consumerHash + constants.DashSeparatorString + environment
 }
 
@@ -100,14 +101,14 @@ func GenerateConsumerName(applicationUUID string, environment string) string {
 func GenerateSecretName(applicationUUID string, apiUUID string, secretType string) string {
 	loggers.LoggerUtils.Debugf("Generating secret name|App:%s API:%s Type:%s\n", applicationUUID, apiUUID, secretType)
 
-	return constants.SecretPrefix + generateSHA1Hash(applicationUUID+apiUUID) + constants.DashSeparatorString + secretType
+	return constants.SecretPrefix + GenerateSHA1Hash(applicationUUID+apiUUID) + constants.DashSeparatorString + secretType
 }
 
 // GenerateACLGroupName generates a kong acl API group name
 func GenerateACLGroupName(apiName string, environment string) string {
 	loggers.LoggerUtils.Debugf("Generating ACL group name|API:%s Env:%s\n", apiName, environment)
 
-	return constants.APIPrefix + generateSHA1Hash(apiName) + constants.DashSeparatorString + environment
+	return constants.APIPrefix + GenerateSHA1Hash(apiName) + constants.DashSeparatorString + environment
 }
 
 // GenerateJSON converts go struct to json
@@ -141,18 +142,20 @@ func PrepareRateLimit(rateLimitConfig *KongPluginConfig, unit string, unitTime i
 	}
 }
 
-// generateSHA1Hash returns the SHA1 hash for the given string
-func generateSHA1Hash(input string) string {
+// GenerateSHA1Hash returns the SHA1 hash for the given string
+func GenerateSHA1Hash(input string) string {
 	h := sha1.New()
 	h.Write([]byte(input))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// PrepareSecretName converts string for a k8s secret
-func PrepareSecretName(name string) string {
+// PrepareDashedName converts string for a k8s secret
+func PrepareDashedName(name string) string {
 	loggers.LoggerUtils.Debugf("Preparing secret name|Input:%s\n", name)
 
 	lowercaseString := strings.ToLower(name)
-	result := strings.ReplaceAll(lowercaseString, constants.SpaceString, constants.DashSeparatorString)
-	return result
+	re := regexp.MustCompile(constants.KeyManagerNameRegex)
+	sanitized := re.ReplaceAllString(lowercaseString, constants.DashSeparatorString)
+
+	return strings.Trim(sanitized, constants.DashSeparatorString)
 }

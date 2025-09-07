@@ -152,7 +152,10 @@ const (
 
 	// Application related labels
 	ApplicationUUIDLabel = "applicationUUID"
-	TypeLabel            = "type"
+
+	// Key Manager related labels
+	TypeLabel           = "type"
+	KeyManagerNameLabel = "keyManagerName"
 
 	// Kong plugin related labels
 	PluginTypeLabel = "plugin"
@@ -265,6 +268,11 @@ const (
 	JWTAuthenticationType    = "JWT"
 )
 
+const (
+	HTTPRouteAuthTypeOAuth2 = "-oauth2"
+	HTTPRouteAuthTypeAPIKey = "-apikey"
+)
+
 // Subscription States
 const (
 	SubscriptionStateBlocked         = "BLOCKED"
@@ -369,6 +377,10 @@ const (
 	SpaceString         = " "
 	DashSeparatorString = "-"
 	EqualString         = "="
+)
+
+const (
+	KeyManagerNameRegex = `[^a-z0-9]+`
 )
 
 // Transformer Name Prefixes
