@@ -105,3 +105,8 @@ func CreateAIProviderName(providerName string, ProviderAPIVersion string) string
 	// This ensures that the name is unique and does not exceed length limits
 	return "ai-provider-" + HashLast50SHA1(providerName+ProviderAPIVersion)
 }
+
+// CreateSubscriptionPolicyName creates a unique name for the subscription policy based on the policy name and organization.
+func CreateSubscriptionPolicyName(policyName string, organization string) string {
+	return "subscription-" + HashLast50SHA1(policyName+organization)
+}
