@@ -32,14 +32,15 @@ import (
 	"strconv"
 	"strings"
 
+	k8sclient "github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector/internal/k8sClient"
 	logger "github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector/internal/loggers"
+	"github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector/internal/utils"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/config"
 	pkgAuth "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/auth"
 	eventhubTypes "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/eventhub/types"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/managementserver"
 	sync "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/synchronizer"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/tlsutils"
-	k8sclient "github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector/internal/k8sClient"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	dpv2alpha1 "github.com/wso2/apk/common-go-libs/apis/dp/v2alpha1"
@@ -189,13 +190,14 @@ func FetchAIProvidersOnEvent(aiProviderName string, aiProviderVersion string, or
 func createAIProviderRoutePolicy(aiProvider *eventhubTypes.AIProvider) dpv2alpha1.RoutePolicy {
 	logger.LoggerSynchronizer.Debugf("AI Provider event data: %+v", aiProvider)
 	conf, _ := config.ReadConfigs()
-	sha1ValueofAIProviderName := GetSha1Value(aiProvider.Name)
+	policyID := utils.GetSha1Value(aiProvider.Name + aiProvider.Organization)
 	sha1ValueOfOrganization := GetSha1Value(aiProvider.Organization)
+	logger.LoggerSynchronizer.Infof("AI Provider Name: %s || AI Provider API Version: %s, ID: %s", aiProvider.Name, aiProvider.APIVersion, aiProvider.ID)
 	labelMap := map[string]string{
-		"name": sha1ValueofAIProviderName,
-		"organization": sha1ValueOfOrganization,
-		"InitiateFrom": "CP",
-		"CPName":       aiProvider.Name,
+		"kgw.wso2.com/type": "ai-provider",
+		"kgw.wso2.com/organization": sha1ValueOfOrganization,
+		"kgw.wso2.com/cpInitiated": "true",
+		"kgw.wso2.com/cpName":       aiProvider.Name,
 	}
 	// var requestModelInputSource string
 	var requestModelAttributeIdentifier string
@@ -240,7 +242,7 @@ func createAIProviderRoutePolicy(aiProvider *eventhubTypes.AIProvider) dpv2alpha
 
 	crAIProviderRP := dpv2alpha1.RoutePolicy{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      aiProvider.ID,
+			Name:      utils.CreateAIProviderName(aiProvider.ID, aiProvider.APIVersion),
 			Namespace: conf.DataPlane.Namespace,
 			Labels:    labelMap,
 		},
@@ -248,7 +250,7 @@ func createAIProviderRoutePolicy(aiProvider *eventhubTypes.AIProvider) dpv2alpha
 			RequestMediation: []*dpv2alpha1.Mediation{
 				{
 					PolicyName:    "AIProvider",
-					PolicyID:      "policy-uuid-1", //!!! Need to add the logic for dynamic UUID generation
+					PolicyID:      policyID,
 					PolicyVersion: aiProvider.APIVersion,
 					Parameters: []*dpv2alpha1.Parameter{
 						{

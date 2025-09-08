@@ -426,7 +426,6 @@ func HandleAIProviderEvents(data []byte, eventType string, c client.Client) {
 	} else if strings.EqualFold(eventConstants.AIProviderDelete, eventType) { // Deleting AI Provider CR
 		logger.LoggerMessaging.Infof("Deletion for AI Provider: %s for tenant: %s", aiProviderEvent.Name, aiProviderEvent.Event.TenantDomain)
 		aiProvider := mgtServer.GetAIProvider(aiProviderEvent.ID)
-		// !!!TODO: NEED TO ADD THE LOGIC
 		logger.LoggerMessaging.Debugf("Deleting AI Provider: %s", aiProvider.Name)
 		k8sclient.DeleteAIProviderCR(aiProvider.ID, c)
 		mgtServer.DeleteAIProvider(aiProviderEvent.ID)

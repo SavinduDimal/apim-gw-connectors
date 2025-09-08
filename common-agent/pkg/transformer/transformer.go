@@ -138,9 +138,10 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints st
 			return "", "null", "null", 0, nil, []EndpointSecurityConfig{}, nil, nil, nil, err
 		}
 		sha1ValueforCRName := config.LLMProviderID
+		logger.LoggerTransformer.Debugf("AI Provider Config info: %+v", config)
 		apk.AIProvider = &AIProvider{
 			Name:       sha1ValueforCRName,
-			APIVersion: "1",
+			APIVersion: config.LLMProviderAPIVersion,
 		}
 	}
 
@@ -728,7 +729,7 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 				SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Sandbox.EndpointUUID), "sandbox", "secret"}, "-"),
 				In:             "Header",
 				APIKeyNameKey:  endpointSecurityData.Sandbox.APIKeyIdentifier,
-				APIKeyValueKey: "apiKey",
+				APIKeyValueKey: "APIKey",
 			}
 		} else {
 			sandboxEndpointConf.EndSecurity.SecurityType = SecretInfo{
@@ -747,7 +748,7 @@ func getEndpointConfigs(sandboxURL string, prodURL string, endCertAvailable bool
 				SecretName:     strings.Join([]string{apiUniqueID, generateSHA1Hash(endpointSecurityData.Production.EndpointUUID), "production", "secret"}, "-"),
 				In:             "Header",
 				APIKeyNameKey:  endpointSecurityData.Production.APIKeyIdentifier,
-				APIKeyValueKey: "apiKey",
+				APIKeyValueKey: "APIKey",
 			}
 		} else {
 			prodEndpointConf.EndSecurity.SecurityType = SecretInfo{
