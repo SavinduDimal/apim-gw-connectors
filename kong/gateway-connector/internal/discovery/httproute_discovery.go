@@ -172,6 +172,8 @@ func updateAPIFromHTTPRoute(api *managementserver.API, u *unstructured.Unstructu
 			switch pluginType {
 			case constants.CORSPlugin:
 				api.CORSPolicy = extractCORSPolicyFromKongPlugin(kongPlugin)
+			case constants.JWTPlugin:
+				api.AuthHeader = extractAuthHeaderFromJWTPolicyKongPlugin(kongPlugin)
 			}
 		}
 	}
@@ -347,6 +349,23 @@ func extractCORSPolicyFromKongPlugin(kongPlugin *unstructured.Unstructured) *man
 		}
 	}
 	return cors
+}
+
+// extractAuthHeaderFromJWTPolicyKongPlugin pulls JWT details from a KongPlugin
+func extractAuthHeaderFromJWTPolicyKongPlugin(kongPlugin *unstructured.Unstructured) string {
+	loggers.LoggerWatcher.Debugf("Extracting JWT policy from KongPlugin: %s/%s", kongPlugin.GetNamespace(), kongPlugin.GetName())
+
+	defaultHeaderName := constants.JWTDefaultHeaderName
+	if config, found, _ := unstructured.NestedMap(kongPlugin.Object, constants.ConfigField); found {
+		// Extract header names from JWT plugin configuration
+		if headerNames, ok := config[constants.JWTHeaderNamesField].([]interface{}); ok && len(headerNames) > 0 {
+			if headerName, ok := headerNames[0].(string); ok && headerName != constants.EmptyString {
+				loggers.LoggerWatcher.Debugf("Found JWT header name in plugin config: %s", headerName)
+				return headerName
+			}
+		}
+	}
+	return defaultHeaderName
 }
 
 // updateResourceLabels updates multiple labels on a resource
