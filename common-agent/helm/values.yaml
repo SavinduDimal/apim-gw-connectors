@@ -36,7 +36,7 @@ controlPlane:
   serviceURL: https://apim-wso2am-acp-1-service.apk.svc.cluster.local:9443/
   username: admin
   password: admin
-  environmentLabels: kong_k8s_gw
+  environmentLabels: Default
   skipSSLVerification: true
   eventListeningEndpoints: amqp://admin:admin@apim-wso2am-acp-1-service.apk.svc.cluster.local:5672?retries='10'&connectdelay='30'
   # internalKeyIssuer: https://am.wso2.com:443/oauth2/token
