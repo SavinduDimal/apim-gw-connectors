@@ -43,6 +43,9 @@ controlPlane:
 dataPlane:
   enabled: true
   namespace: apk
+  # gatewayClassName: kong
+  # GatewayHTTPSPort: 8443
+  # GatewayHTTPPort: 8000
 metrics:
   enabled: false
 agent:
