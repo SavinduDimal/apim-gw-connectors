@@ -33,13 +33,12 @@ resources:
     cpu: "200m"
 controlPlane:
   enabled: true
-  serviceURL: https://apim-wso2am-acp-1-service.kong.svc.cluster.local:9443/
+  serviceURL: https://host.docker.internal:9444/
   username: admin
   password: admin
-  environmentLabels: kong_k8s_gw
+  environmentLabels: Kong_GW_K8s
   skipSSLVerification: true
-  eventListeningEndpoints: amqp://admin:admin@apim-wso2am-acp-1-service.kong.svc.cluster.local:5672?retries='10'&connectdelay='30'
-  # internalKeyIssuer: https://am.wso2.com:443/oauth2/token
+  eventListeningEndpoints: amqp://admin:admin@host.docker.internal:5673?retries='10'&connectdelay='30'
 dataPlane:
   enabled: true
   namespace: kong
@@ -49,7 +48,6 @@ dataPlane:
 metrics:
   enabled: false
 agent:
-  # mode: CPtoDP
   gateway: kong
 certmanager:
   enabled: true

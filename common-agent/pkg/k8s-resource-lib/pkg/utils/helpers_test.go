@@ -114,8 +114,10 @@ func TestRetrievePathPrefix(t *testing.T) {
 		expected  string
 	}{
 		{"Root operation", "/", "/base", "/base/"},
-		{"Wildcard operation", "/*", "/base", "/base/([^/]+)"},
-		{"Path with param", "/resource/{id}", "/base", "/base/resource/([^/]+)"},
+		{"Wildcard operation 1", "name/*", "/base", "/base/name"},
+		{"Wildcard operation 2", "/*", "/base", "/base"},
+		{"Path with param 1", "/resource/{id}", "/base", "/base/resource/([^/]+)"},
+		{"Path with param 2", "/resource/{id}/", "/base", "/base/resource/([^/]+)/"},
 	}
 
 	for _, tt := range tests {
@@ -134,9 +136,13 @@ func TestGeneratePrefixMatch(t *testing.T) {
 		operation      types.Operation
 		expectedPrefix string
 	}{
-		{"Wildcard operation", "/", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/*"}, "/$(uri_captures[1])"},
-		{"Wildcard operation", "/*", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/*"}, "/$(uri_captures[1])"},
-		{"Path with param", "/anything/get", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/resource/{id}"}, "/anything/get/resource/$(uri_captures[1])"},
+		{"Root operation 1", "/", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/"}, "/"},
+		{"Root operation 2", "/anything/get/", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/"}, "/anything/get/"},
+		{"Root operation 3", "/anything/get", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/"}, "/anything/get/"},
+		{"Wildcard operation 1", "/", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/*"}, ""},
+		{"Wildcard operation 2", "/anything/get/", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/*"}, "/anything/get"},
+		{"Wildcard operation 3", "/anything/get", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/*"}, "/anything/get"},
+		{"Path with param", "/anything/get", []types.EndpointDetails{types.EndpointDetails{ServiceEntry: false}}, types.Operation{Target: "/resource/{id}/"}, "/anything/get/resource/$(uri_captures[1])/"},
 	}
 
 	for _, tt := range tests {
