@@ -169,12 +169,19 @@ func RetrievePathPrefix(operation string, basePath string) string {
 
 	if strings.HasSuffix(generatedPath, "/*") {
 		lastSlashIndex := strings.LastIndex(generatedPath[:len(generatedPath)-1], "/")
-		generatedPath = generatedPath[:lastSlashIndex] + "([^/]+)"
+		generatedPath = generatedPath[:lastSlashIndex]
 	}
 	generatedPath = strings.TrimSpace(generatedPath)
 	paths := []string{"", ExtractPath(basePath), ExtractPath(generatedPath)}
 
-	return strings.Join(paths, "/")
+	result := strings.Join(paths, "/")
+	if operation == "/*" {
+		result = strings.TrimSuffix(result, "/")
+	}
+	if strings.HasSuffix(operation, "/") && operation != "/" {
+		result += "/"
+	}
+	return result
 }
 
 // GeneratePrefixMatch generates a prefix match based on the endpoint and operation
@@ -187,11 +194,7 @@ func GeneratePrefixMatch(endpointToUse []types.EndpointDetails, operation types.
 	generatedPath := ""
 	pathParamCount := 1
 
-	if target == "/*" {
-		generatedPath = "/$(uri_captures[1])"
-	} else if target == "/" {
-		generatedPath = "/"
-	} else {
+	if target != "/*" {
 		for _, value := range splitValues {
 			trimmedValue := strings.TrimSpace(value)
 			if len(trimmedValue) > 0 {
@@ -214,15 +217,19 @@ func GeneratePrefixMatch(endpointToUse []types.EndpointDetails, operation types.
 		generatedPath = strings.TrimSpace(generatedPath)
 	}
 
-	if target == "/*" {
-		if basePath == "/" {
-			result := "/$(uri_captures[1])"
-			return result
-		} else if strings.HasSuffix(basePath, "/*") {
-			basePathWithoutWildcard := basePath[:len(basePath)-2]
-			result := basePathWithoutWildcard + "/$(uri_captures[1])"
-			return result
-		}
+	if strings.HasSuffix(target, "/") {
+		generatedPath += "/"
+	}
+
+	if basePath == "/" {
+		return generatedPath
+	} else if strings.HasSuffix(basePath, "/") {
+		result := strings.TrimSuffix(basePath, "/")
+		return result + generatedPath
+	} else if strings.HasSuffix(basePath, "/*") {
+		basePathWithoutWildcard := basePath[:len(basePath)-2]
+		result := basePathWithoutWildcard + "/$(uri_captures[1])"
+		return result
 	}
 
 	result := basePath + generatedPath
