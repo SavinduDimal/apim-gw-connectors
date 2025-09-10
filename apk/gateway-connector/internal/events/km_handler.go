@@ -36,24 +36,29 @@ import (
 func HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventKeyManagerNotification, c client.Client) {
 	// Get singleton cache instance for runtime updates
 	kmCache := cache.GetKeyManagerCacheInstance()
+	resolvedKeyManager := eventhub.MarshalKeyManager(keyManager)
 	if strings.EqualFold(msg.KeyManagerConfigEvent, notification.Event.PayloadData.EventType) {
 		if strings.EqualFold(msg.ActionDelete, notification.Event.PayloadData.Action) {
 			// Delete the backend,backendTLS and secret and remove it from cache
-			kmToDelete, _ := kmCache.GetKeyManager(notification.Event.PayloadData.Name)
-			k8sclient.DeleteBackendCRByName(kmToDelete.K8sBackendName, kmToDelete.K8sBackendNamespace, c)
-			// !!!TODO: Need to change this to DeleteSecurityPolicyCRs
-			k8sclient.UpdateSecurityPolicyCRs(notification.Event.PayloadData.Name, notification.Event.PayloadData.TenantDomain, c, true)
-			deleted := kmCache.DeleteKeyManager(notification.Event.PayloadData.Name)
-			if deleted {
-				logger.LoggerMessaging.Infof("KeyManager '%s' deleted from cache during runtime event", notification.Event.PayloadData.Name)
+			logger.LoggerMessaging.Debugf("Deleting KM: %s --- KM Org: %s", resolvedKeyManager.Name, resolvedKeyManager.Organization)
+			kmToDelete, exists := kmCache.GetKeyManager(resolvedKeyManager.Name, resolvedKeyManager.Organization)
+			if exists {
+				k8sclient.DeleteBackendCRByName(kmToDelete.K8sBackendName, kmToDelete.K8sBackendNamespace, c)
+				// Update the SecurityPolicy CRs for the KM
+				k8sclient.UpdateSecurityPolicyCRs(resolvedKeyManager.Name, resolvedKeyManager.Organization, c, true)
+				deleted := kmCache.DeleteKeyManager(resolvedKeyManager.Name, resolvedKeyManager.Organization)
+				if deleted {
+					logger.LoggerMessaging.Infof("KeyManager '%s' deleted from cache during runtime event", notification.Event.PayloadData.Name)
+				}
+				logger.LoggerMessaging.Infof("KM and related resources deleted from the dataplane...")
+			} else {
+				logger.LoggerMessaging.Errorf("KeyManager '%s' not found in cache, hence unable to clean up the KM and related resources.", notification.Event.PayloadData.Name)
 			}
-			logger.LoggerMessaging.Infof("KM and related resources deleted from the dataplane...")
 		} else if keyManager != nil {
 			if strings.EqualFold(msg.ActionAdd, notification.Event.PayloadData.Action) ||
 				strings.EqualFold(msg.ActionUpdate, notification.Event.PayloadData.Action) {
-				resolvedKeyManager := eventhub.MarshalKeyManager(keyManager)
 				// Add/Update in cache during runtime
-				logger.LoggerMessaging.Infof("Key Manager details(from runtime event): %+v", resolvedKeyManager)
+				logger.LoggerMessaging.Debugf("Resolved Key Manager details(from runtime event): %+v", resolvedKeyManager)
 				backendName, hostname , backendPort, namespace := utils.GetBackendConfigForKM(resolvedKeyManager)
 
 				kmCache.AddOrUpdateKeyManager(&cache.KMCacheObject{
@@ -77,8 +82,8 @@ func HandleKMConfiguration(keyManager *types.KeyManager, notification msg.EventK
 					if err != nil {
 						logger.LoggerSynchronizer.Errorf("Error creating backend and backend TLS for KM: %+v", err)
 					}
-					k8sclient.UpdateSecurityPolicyCRs(notification.Event.PayloadData.Name, notification.Event.PayloadData.TenantDomain, c, false)
-					logger.LoggerMessaging.Debugf("Updating SecurityPolicy CR: %v", resolvedKeyManager)
+					logger.LoggerMessaging.Debugf("Updating SecurityPolicy CR for KM: %s --- KM Org: %s", resolvedKeyManager.Name, resolvedKeyManager.Organization)
+					k8sclient.UpdateSecurityPolicyCRs(resolvedKeyManager.Name, resolvedKeyManager.Organization, c, false)
 				}
 				logger.LoggerMessaging.Infof("KeyManager cache Content: %+v", kmCache.GetAllKeyManagers())
 			}

@@ -48,6 +48,11 @@ import (
 
 // !!! ======== NEW ========
 
+const (
+	// Shared BackendTrafficPolicy name for all subscription rate limit policies
+	SharedRateLimitPolicyName = "kgw-shared-subscription-rl-policy"
+)
+
 // UndeployRouteMetadataCRs removes all RouteMetadata Custom Resource from the Kubernetes cluster based on API ID label.
 func UndeployRouteMetadataCRs(apiID string, k8sClient client.Client) {
 	conf, errReadConfig := config.ReadConfigs()
@@ -532,7 +537,7 @@ func UpdateRateLimitPolicyCR(policy eventhubTypes.RateLimitPolicy, k8sClient cli
 func DeploySubscriptionRateLimitPolicyCR(policy eventhubTypes.SubscriptionPolicy, k8sClient client.Client) {
 	conf, _ := config.ReadConfigs()
 	crRLBackendTrafficPolicy := gatewayv1alpha1.BackendTrafficPolicy{}
-	crName := PrepareSubscritionPolicyCRName(policy.Name, policy.TenantDomain)
+	crName := utils.CreateSubscriptionPolicyName(policy.Name, policy.TenantDomain)
 
 	unit, requestsPerUnit := getRateLimitPolicyContents(policy)
 	loggers.LoggerK8sClient.Infof("Requests Per Unit after parsing: %d | Unit: %s", requestsPerUnit, unit)
@@ -543,8 +548,8 @@ func DeploySubscriptionRateLimitPolicyCR(policy eventhubTypes.SubscriptionPolicy
 		gatewayName = "wso2-kgw-default"
 	}
 	labelMap := map[string]string{
-		"InitiateFrom": "CP",
-		"CPName":       policy.Name,
+		"kgw.wso2.com/cpInitiated": "true",
+		"kgw.wso2.com/cpName":      policy.Name,
 	}
 
 	if err := k8sClient.Get(context.Background(), client.ObjectKey{Namespace: conf.DataPlane.Namespace, Name: crName}, &crRLBackendTrafficPolicy); err != nil {
@@ -638,8 +643,8 @@ func DeployAIRateLimitPolicyFromCPPolicy(policy eventhubTypes.SubscriptionPolicy
 	}
 
 	labelMap := map[string]string{
-		"InitiateFrom": "CP",
-		"CPName":       policy.Name,
+		"kgw.wso2.com/cpInitiated": "true",
+		"kgw.wso2.com/cpName":      policy.Name,
 	}
 
 	crRLBackendTrafficPolicy := gatewayv1alpha1.BackendTrafficPolicy{
@@ -908,6 +913,8 @@ func UndeploySubscriptionAIRateLimitPolicyCR(crName string, k8sClient client.Cli
 func UpdateSecurityPolicyCRs(keymanagerName string, tenantDomain string, k8sClient client.Client, removeProvider bool) error {
 	conf, _ := config.ReadConfigs()
 	kmCache := cache.GetKeyManagerCacheInstance()
+	kmNameWithOrg := tenantDomain + "-" + keymanagerName
+	loggers.LoggerK8sClient.Debugf("Checking for SecurityPolicy CRs for the org: %s", tenantDomain)
 	// SecurityPolicy CRs are filtered by organization
 	labelMap := map[string]string{"kgw.wso2.com/organization": tenantDomain}
 	listOption := &client.ListOptions{
@@ -921,15 +928,17 @@ func UpdateSecurityPolicyCRs(keymanagerName string, tenantDomain string, k8sClie
 		loggers.LoggerK8sClient.Error("Unable to list SecurityPolicy CR: " + err.Error())
 	}
 	if len(securityPolicyList.Items) == 0 {
-		loggers.LoggerK8sClient.Infof("No SecurityPolicy CR found for deletion")
+		loggers.LoggerK8sClient.Infof("No SecurityPolicy CR found for update")
 	}
 	for _, securitypolicy := range securityPolicyList.Items {
 		providers := securitypolicy.Spec.JWT.Providers
+		loggers.LoggerK8sClient.Debugf("Providers: %+v", providers)
 		updated := false    // Track if any changes were made
 		if removeProvider { // Remove the provider details from JWT segment in each CR
+			loggers.LoggerK8sClient.Infof("Removing the provider from the SecurityPolicy")
 			updatedProviders := []gatewayv1alpha1.JWTProvider{}
 			for _, provider := range providers {
-				if provider.Name != keymanagerName {
+				if provider.Name != kmNameWithOrg {
 					updatedProviders = append(updatedProviders, provider)
 				} else {
 					updated = true // Mark that we removed a provider
@@ -939,8 +948,8 @@ func UpdateSecurityPolicyCRs(keymanagerName string, tenantDomain string, k8sClie
 			loggers.LoggerK8sClient.Infof("Removed the %s provider details from JWT segment in SecurityPolicy CR: %s", keymanagerName, securitypolicy.Name)
 		} else { // Update the provider details in the CRs
 			for i, provider := range providers {
-				if provider.Name == keymanagerName {
-					updatedKMFromAPIM, exists := kmCache.GetKeyManager(keymanagerName)
+				if provider.Name == kmNameWithOrg {
+					updatedKMFromAPIM, exists := kmCache.GetKeyManager(keymanagerName, tenantDomain)
 
 					if !exists {
 						loggers.LoggerK8sClient.Errorf("KeyManager '%s' not found in cache", keymanagerName)
@@ -1223,7 +1232,7 @@ func RetrieveAllRatelimitPoliciesSFromK8s(ratelimitName string, organization str
 	conf, _ := config.ReadConfigs()
 	rlBackendTPList := gatewayv1alpha1.BackendTrafficPolicyList{}
 	resolvedRLBackendTPList := make([]gatewayv1alpha1.BackendTrafficPolicy, 0)
-	labelMap := map[string]string{"rateLimitPolicyName": ratelimitName, "organization": organization}
+	labelMap := map[string]string{"kgw.wso2.com/policyName": ratelimitName, "kgw.wso2.com/organization": organization, "kgw.wso2.com/cpInitiated": "true"}
 	// !!! Might need to change this later
 	// Create a list option with the label selector
 	listOption := &client.ListOptions{
@@ -1247,7 +1256,7 @@ func RetrieveAllAIRatelimitPoliciesSFromK8s(aiRatelimitName string, organization
 	conf, _ := config.ReadConfigs()
 	airlBackendTPList := gatewayv1alpha1.BackendTrafficPolicyList{}
 	resolvedAIRLBackendTPList := make([]gatewayv1alpha1.BackendTrafficPolicy, 0)
-	labelMap := map[string]string{"rateLimitPolicyName": aiRatelimitName, "organization": organization}
+	labelMap := map[string]string{"kgw.wso2.com/policyName": aiRatelimitName, "kgw.wso2.com/organization": organization, "kgw.wso2.com/cpInitiated": "true"}
 	// !!! Might need to change this later
 	// Create a list option with the label selector
 	listOption := &client.ListOptions{
@@ -1350,7 +1359,7 @@ func GenerateKMBackendCR(km eventhubTypes.ResolvedKeyManager, backendPort int, b
 			Labels: map[string]string{
 				"kgw.wso2.com/name":         km.Name,
 				"kgw.wso2.com/organization": km.Organization,
-				"kgw.wso2.com/cpInitiated": "true",
+				"kgw.wso2.com/cpInitiated":  "true",
 			},
 		},
 		Spec: gatewayv1alpha1.BackendSpec{
@@ -1371,7 +1380,8 @@ func GenerateKMBackendCR(km eventhubTypes.ResolvedKeyManager, backendPort int, b
 func GenerateKMBackendTLSCR(km eventhubTypes.ResolvedKeyManager, backendName, namespace, hostname string) (*gwapiv1a3.BackendTLSPolicy, *corev1.Secret) {
 	var validation gwapiv1a3.BackendTLSPolicyValidation
 	var secret *corev1.Secret
-
+	conf, _ := config.ReadConfigs()
+	loggers.LoggerK8sClient.Infof("CA Cert Secret Name: %s", conf.ControlPlane.Certificates.CaCertSecretName)
 	if km.KeyManagerConfig.CertificateType == "JWKS" {
 		loggers.LoggerK8sClient.Info("JWKS Certificate Type")
 		validation = gwapiv1a3.BackendTLSPolicyValidation{
@@ -1380,7 +1390,7 @@ func GenerateKMBackendTLSCR(km eventhubTypes.ResolvedKeyManager, backendName, na
 				{
 					Group: "",
 					Kind:  "Secret",
-					Name:  gwapiv1a2.ObjectName("apim-ca-certificate"),
+					Name:  gwapiv1a2.ObjectName(conf.ControlPlane.Certificates.CaCertSecretName),
 				},
 			},
 		}
@@ -1422,7 +1432,7 @@ func GenerateKMBackendTLSCR(km eventhubTypes.ResolvedKeyManager, backendName, na
 			Labels: map[string]string{
 				"kgw.wso2.com/name":         km.Name,
 				"kgw.wso2.com/organization": km.Organization,
-				"kgw.wso2.com/cpInitiated": "true",
+				"kgw.wso2.com/cpInitiated":  "true",
 			},
 		},
 		Spec: gwapiv1a3.BackendTLSPolicySpec{
@@ -1460,4 +1470,290 @@ func DeleteBackendCRByName(backendName, namespace string, k8sClient client.Clien
 	}
 	loggers.LoggerK8sClient.Infof("Successfully deleted Backend CR '%s'", backendName)
 	return nil
+}
+
+// RetrieveSharedSubscriptionRateLimitPolicyFromK8s retrieves the shared BackendTrafficPolicy for the given organization
+// and extracts all policy names from the rules headers
+func RetrieveSharedSubscriptionRateLimitPolicyFromK8s(organization string, k8sClient client.Client) ([]string, error) {
+	conf, _ := config.ReadConfigs()
+	sharedPolicyName := utils.CreateSubscriptionPolicyName(SharedRateLimitPolicyName, organization)
+
+	// Get the shared BackendTrafficPolicy
+	existingPolicy := &gatewayv1alpha1.BackendTrafficPolicy{}
+	err := k8sClient.Get(context.Background(), client.ObjectKey{
+		Namespace: conf.DataPlane.Namespace,
+		Name:      sharedPolicyName,
+	}, existingPolicy)
+
+	if err != nil {
+		if k8error.IsNotFound(err) {
+			loggers.LoggerK8sClient.Infof("Shared RateLimit BackendTrafficPolicy not found for organization: %s", organization)
+			return []string{}, nil // Return empty slice, not an error
+		}
+		loggers.LoggerK8sClient.Errorf("Unable to get shared RateLimit BackendTrafficPolicy CR: %v", err)
+		return nil, err
+	}
+
+	// Extract policy names from the rules headers
+	policyNames := []string{}
+	for _, rule := range existingPolicy.Spec.RateLimit.Global.Rules {
+		for _, selector := range rule.ClientSelectors {
+			for _, header := range selector.Headers {
+				if header.Name == "policy-id" && header.Value != nil && *header.Value != "" {
+					policyNames = append(policyNames, *header.Value)
+					break // Found policy-id for this rule, break inner loops
+				}
+			}
+		}
+	}
+
+	loggers.LoggerK8sClient.Debugf("Retrieved %d policy names from shared BackendTrafficPolicy for organization %s: %v",
+		len(policyNames), organization, policyNames)
+	return policyNames, nil
+}
+
+// DeploySubscriptionRateLimitPolicyCR applies the given RateLimitPolicies struct to the Kubernetes cluster.
+func DeploySharedSubscriptionRateLimitPolicyCR(policy eventhubTypes.SubscriptionPolicy, k8sClient client.Client, aiPolicy bool) {
+	conf, _ := config.ReadConfigs()
+
+	unit, requestsPerUnit := getRateLimitPolicyContents(policy)
+	loggers.LoggerK8sClient.Infof("Requests Per Unit after parsing: %d | Unit: %s", requestsPerUnit, unit)
+
+	gatewayName, _ := getGatewayNameFromK8s(k8sClient)
+	loggers.LoggerK8sClient.Infof("Gateway Name fetched from the k8s cluster: %s", gatewayName)
+	if gatewayName == "" {
+		gatewayName = "wso2-kgw-default"
+	}
+	sharedPolicyName := utils.CreateSubscriptionPolicyName(SharedRateLimitPolicyName, policy.TenantDomain)
+	// Create the new rule for this policy
+	var newRule gatewayv1alpha1.RateLimitRule
+	if !aiPolicy {
+		newRule = gatewayv1alpha1.RateLimitRule{
+			ClientSelectors: []gatewayv1alpha1.RateLimitSelectCondition{
+				{
+					Headers: []gatewayv1alpha1.HeaderMatch{
+						{
+							Name:   "x-wso2-api-id",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "x-wso2-organization",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "x-wso2-subscription-id",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "policy-id",
+							Value:  &policy.Name,
+							Invert: ptr.To(false),
+						},
+					},
+				},
+			},
+			Limit: gatewayv1alpha1.RateLimitValue{
+				Requests: requestsPerUnit,
+				Unit:     unit,
+			},
+			Shared: ptr.To(false),
+		}
+	} else {
+		// Create the new rule for this AI policy
+		newRule = gatewayv1alpha1.RateLimitRule{
+			ClientSelectors: []gatewayv1alpha1.RateLimitSelectCondition{
+				{
+					Headers: []gatewayv1alpha1.HeaderMatch{
+						{
+							Name:   "x-wso2-api-id",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "x-wso2-organization",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "x-wso2-subscription-id",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "cost",
+							Value:  ptr.To(""),
+							Invert: ptr.To(false),
+						},
+						{
+							Name:   "policy-id",
+							Value:  &policy.Name,
+							Invert: ptr.To(false),
+						},
+					},
+				},
+			},
+			Limit: gatewayv1alpha1.RateLimitValue{
+				Requests: requestsPerUnit,
+				Unit:     unit,
+			},
+			Shared: ptr.To(false),
+		}
+	}
+
+	// Try to get existing shared BackendTrafficPolicy
+	existingPolicy := &gatewayv1alpha1.BackendTrafficPolicy{}
+	err := k8sClient.Get(context.Background(), client.ObjectKey{
+		Namespace: conf.DataPlane.Namespace,
+		Name:      sharedPolicyName,
+	}, existingPolicy)
+
+	if err != nil {
+		if k8error.IsNotFound(err) {
+			// Create new shared BackendTrafficPolicy
+			sharedPolicy := &gatewayv1alpha1.BackendTrafficPolicy{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      sharedPolicyName,
+					Namespace: conf.DataPlane.Namespace,
+					Labels: map[string]string{
+						"kgw.wso2.com/cpInitiated":  "true",
+						"kgw.wso2.com/type":         "subscription-ratelimit",
+						"kgw.wso2.com/organization": policy.TenantDomain,
+					},
+				},
+				Spec: gatewayv1alpha1.BackendTrafficPolicySpec{
+					MergeType: ptr.To(gatewayv1alpha1.MergeType("StrategicMerge")),
+					RateLimit: &gatewayv1alpha1.RateLimitSpec{
+						Type: gatewayv1alpha1.RateLimitType("Global"),
+						Global: &gatewayv1alpha1.GlobalRateLimit{
+							Rules: []gatewayv1alpha1.RateLimitRule{newRule},
+						},
+					},
+					PolicyTargetReferences: gatewayv1alpha1.PolicyTargetReferences{
+						TargetRefs: []gwapiv1a2.LocalPolicyTargetReferenceWithSectionName{
+							{
+								LocalPolicyTargetReference: gwapiv1a2.LocalPolicyTargetReference{
+									Group: gwapiv1a2.Group(constants.GatewayGroup),
+									Kind:  gwapiv1a2.Kind("Gateway"),
+									Name:  gwapiv1a2.ObjectName(gatewayName),
+								},
+							},
+						},
+					},
+				},
+			}
+
+			if err := k8sClient.Create(context.Background(), sharedPolicy); err != nil {
+				loggers.LoggerK8sClient.Errorf("Unable to create the initial shared subscription rateLimit BackendTrafficPolicy CR: %+v", err)
+			} else {
+				loggers.LoggerK8sClient.Infof("Shared Subscription RateLimit BackendTrafficPolicy CR created: %s", sharedPolicy.Name)
+			}
+		} else {
+			loggers.LoggerK8sClient.Errorf("Unable to get shared Subscription RateLimit BackendTrafficPolicy CR: %+v", err)
+		}
+	} else {
+		// Update existing shared BackendTrafficPolicy by adding/updating the rule
+		ruleUpdated := false
+
+		// Check if a rule for this policy already exists
+		for i, rule := range existingPolicy.Spec.RateLimit.Global.Rules {
+			// Check if this rule belongs to the current policy by examining headers
+			for _, selector := range rule.ClientSelectors {
+				for _, header := range selector.Headers {
+					if header.Name == "policy-id" && header.Value != nil && *header.Value == policy.Name {
+						// Update existing rule
+						existingPolicy.Spec.RateLimit.Global.Rules[i] = newRule
+						ruleUpdated = true
+						break
+					}
+				}
+				if ruleUpdated {
+					break
+				}
+			}
+			if ruleUpdated {
+				break
+			}
+		}
+
+		// If no existing rule found, add new rule
+		if !ruleUpdated {
+			existingPolicy.Spec.RateLimit.Global.Rules = append(existingPolicy.Spec.RateLimit.Global.Rules, newRule)
+		}
+
+		if err := k8sClient.Update(context.Background(), existingPolicy); err != nil {
+			loggers.LoggerK8sClient.Errorf("Unable to update shared RateLimit BackendTrafficPolicy CR: %+v", err)
+		} else {
+			loggers.LoggerK8sClient.Infof("Shared RateLimit BackendTrafficPolicy CR updated with policy: %s", policy.Name)
+		}
+	}
+}
+
+// UnDeploySubscriptionRateLimitPolicyCR removes the rate limit rule for the given policy from the shared BackendTrafficPolicy.
+func UnDeploySharedSubscriptionRateLimitPolicyCR(policyName string, tenantDomain string, k8sClient client.Client, aiPolicy bool) {
+	conf, _ := config.ReadConfigs()
+	sharedPolicyName := utils.CreateSubscriptionPolicyName(SharedRateLimitPolicyName, tenantDomain)
+	// Get the shared BackendTrafficPolicy
+	existingPolicy := &gatewayv1alpha1.BackendTrafficPolicy{}
+	err := k8sClient.Get(context.Background(), client.ObjectKey{
+		Namespace: conf.DataPlane.Namespace,
+		Name:      sharedPolicyName,
+	}, existingPolicy)
+
+	if err != nil {
+		if k8error.IsNotFound(err) {
+			loggers.LoggerK8sClient.Infof("Shared RateLimit BackendTrafficPolicy not found, nothing to remove for policy: %s", policyName)
+		} else {
+			loggers.LoggerK8sClient.Errorf("Unable to get shared RateLimit BackendTrafficPolicy CR: %v", err)
+		}
+		return
+	}
+
+	// Remove the rule for this policy
+	updatedRules := []gatewayv1alpha1.RateLimitRule{}
+	ruleFound := false
+
+	for _, rule := range existingPolicy.Spec.RateLimit.Global.Rules {
+		shouldKeepRule := true
+		for _, selector := range rule.ClientSelectors {
+			for _, header := range selector.Headers {
+				if header.Name == "policy-id" && header.Value != nil && *header.Value == policyName {
+					shouldKeepRule = false
+					ruleFound = true
+					break
+				}
+			}
+			if !shouldKeepRule {
+				break
+			}
+		}
+		if shouldKeepRule {
+			updatedRules = append(updatedRules, rule)
+		}
+	}
+
+	if !ruleFound {
+		loggers.LoggerK8sClient.Infof("Rule for policy '%s' not found in shared BackendTrafficPolicy", policyName)
+		return
+	}
+
+	// Update or delete the policy based on remaining rules
+	if len(updatedRules) == 0 {
+		// No rules left, delete the entire BackendTrafficPolicy
+		if err := k8sClient.Delete(context.Background(), existingPolicy); err != nil {
+			loggers.LoggerK8sClient.Errorf("Unable to delete shared RateLimit BackendTrafficPolicy CR: %v", err)
+		} else {
+			loggers.LoggerK8sClient.Infof("Shared RateLimit BackendTrafficPolicy CR deleted as no rules remain")
+		}
+	} else {
+		// Update with remaining rules
+		existingPolicy.Spec.RateLimit.Global.Rules = updatedRules
+		if err := k8sClient.Update(context.Background(), existingPolicy); err != nil {
+			loggers.LoggerK8sClient.Errorf("Unable to update shared RateLimit BackendTrafficPolicy CR after removing rule: %v", err)
+		} else {
+			loggers.LoggerK8sClient.Infof("Rule for policy '%s' removed from shared BackendTrafficPolicy", policyName)
+		}
+	}
 }

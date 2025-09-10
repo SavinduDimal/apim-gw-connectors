@@ -122,6 +122,7 @@ type controlPlane struct {
 	ClientID                   string
 	ClientSecret               string
 	Provider                   string
+	Certificates               certificates
 }
 
 // Dataplane struct contains the configurations related to the APK
@@ -156,4 +157,9 @@ type metrics struct {
 	Enabled bool
 	Type    string
 	Port    int32
+}
+
+// Certificates struct contains the configurations related to the certificates
+type certificates struct {
+	CaCertSecretName string
 }

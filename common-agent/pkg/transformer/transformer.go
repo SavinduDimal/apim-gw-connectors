@@ -282,7 +282,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints st
 	// Since we only get the KM name, need to get the rest of the details from the internal map we keep
 	// after fetching the key managers from the control plane.
 	logger.LoggerTransformer.Debugf("KeyManager data from yaml: %+v", apiYamlData.KeyManagers)
-	kmData := mapKeyManagers(apiYamlData.KeyManagers)
+	kmData := mapKeyManagers(apiYamlData.KeyManagers, apiYamlData.OrganizationID)
 	logger.LoggerTransformer.Debugf("KeyManager data after mapping: %+v", kmData)
 	apk.KeyManagers = &kmData
 
@@ -357,6 +357,15 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 					PolicyVersion: v1,
 					Parameters:    interceptorParams,
 				}
+			} else if reqPolicy.PolicyName == constants.LuaInterceptorService {
+				logger.LoggerTransformer.Infof("Lua Interceptor Type Request Policy: %+v", reqPolicy)
+				luaPolicy := mapLuaInterceptorPolicy(reqPolicy)
+				requestPolicyList = append(requestPolicyList, luaPolicy)
+			} else if reqPolicy.PolicyName == constants.WASMInterceptorService {
+				// Handle WASM Interceptor Service
+				logger.LoggerTransformer.Infof("WASM Interceptor Type Request Policy: %+v", reqPolicy)
+				wasmPolicy := mapWASMInterceptorPolicy(reqPolicy)
+				requestPolicyList = append(requestPolicyList, wasmPolicy)
 			} else if reqPolicy.PolicyName == constants.BackendJWT {
 				encoding := reqPolicy.Parameters[encoding].(string)
 				header := reqPolicy.Parameters[header].(string)
@@ -579,6 +588,15 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 					PolicyVersion: v1,
 					Parameters:    interceptorParams,
 				}
+			} else if resPolicy.PolicyName == constants.LuaInterceptorService {
+				logger.LoggerTransformer.Debugf("Lua Interceptor Type Response Policy: %v", resPolicy)
+				luaPolicy := mapLuaInterceptorPolicy(resPolicy)
+				responsePolicyList = append(responsePolicyList, luaPolicy)
+			} else if resPolicy.PolicyName == constants.WASMInterceptorService {
+				// Handle WASM Interceptor Service for Response
+				logger.LoggerTransformer.Debugf("WASM Interceptor Type Response Policy: %v", resPolicy)
+				wasmPolicy := mapWASMInterceptorPolicy(resPolicy)
+				responsePolicyList = append(responsePolicyList, wasmPolicy)
 			} else if resPolicy.PolicyName == constants.AddHeader {
 				logger.LoggerTransformer.Debugf("AddHeader Type Response Policy: %v", resPolicy)
 
@@ -971,23 +989,102 @@ func mapAuthConfigs(apiUUID string, authHeader string, configuredAPIKeyHeader st
 	return authConfigs
 }
 
-func mapKeyManagers(keyManagers []string) []KeyManager {
+// mapLuaInterceptorPolicy maps APIM Lua interceptor policy to APK Lua interceptor policy
+func mapLuaInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
+	luaParams := LuaInterceptor{}
+	if name, ok := policy.Parameters["policyName"].(string); ok {
+		luaParams.Name = name
+	}
+	if sourceCode, ok := policy.Parameters["sourceCode"].(string); ok {
+		luaParams.SourceCode = sourceCode
+	}
+	if sourceCodeRef, ok := policy.Parameters["sourceCodeRef"].(string); ok {
+		luaParams.SourceCodeRef = sourceCodeRef
+	}
+	if mountInConfigMap, ok := policy.Parameters["mountInConfigMap"].(bool); ok {
+		luaParams.MountInConfigMap = mountInConfigMap
+	}
+
+	return OperationPolicy{
+		PolicyName:    luaInterceptorPolicy,
+		PolicyVersion: v1,
+		PolicyID:      policy.PolicyID,
+		Parameters:    luaParams,
+	}
+}
+
+// mapWASMInterceptorPolicy maps APIM WASM interceptor policy to APK WASM interceptor policy
+func mapWASMInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
+	wasmParams := WASMInterceptor{}
+	if name, ok := policy.Parameters["policyName"].(string); ok {
+		wasmParams.Name = name
+	}
+	if rootID, ok := policy.Parameters["rootId"].(string); ok {
+		wasmParams.RootID = rootID
+	}
+	if url, ok := policy.Parameters["wasmpolicyURL"].(string); ok {
+		wasmParams.URL = url
+	}
+	if image, ok := policy.Parameters["wasmpolicyImage"].(string); ok {
+		wasmParams.Image = image
+	}
+	if imagePullPolicy, ok := policy.Parameters["imagePullPolicy"].(string); ok {
+		wasmParams.ImagePullPolicy = imagePullPolicy
+	}
+	if config, ok := policy.Parameters["wasmConfig"].(string); ok {
+		wasmParams.Config = config
+	}
+	if failOpen, ok := policy.Parameters["failOpen"].(bool); ok {
+		wasmParams.FailOpen = failOpen
+	}
+	if hostKeysStr, ok := policy.Parameters["hostKeys"].(string); ok {
+		// Split comma-separated host keys
+		if hostKeysStr != "" {
+			hostKeys := strings.Split(hostKeysStr, ",")
+			for i, key := range hostKeys {
+				hostKeys[i] = strings.TrimSpace(key)
+			}
+			wasmParams.HostKeys = hostKeys
+		}
+	}
+
+	return OperationPolicy{
+		PolicyName:    wasmInterceptorPolicy,
+		PolicyVersion: v1,
+		PolicyID:      policy.PolicyID,
+		Parameters:    wasmParams,
+	}
+}
+
+func mapKeyManagers(keyManagers []string, tenantDomain string) []KeyManager {
 	// Get the key manager cache instance and fetch all configured key managers
 	kmCache := cache.GetKeyManagerCacheInstance()
 	kmList := kmCache.GetAllKeyManagers()
 	kmListForAPI := []KeyManager{}
-	for _, keyManager := range keyManagers {
+	
+	sanitizedKeyManagers := make([]string, len(keyManagers))
+	for i, k := range keyManagers {
+		sanitizedKeyManagers[i] = cache.SanitizeKeyManagerName(k)
+	}
+
+	logger.LoggerTransformer.Debugf("Key manager cache: %+v", kmList)
+	logger.LoggerTransformer.Debugf("Key managers list in the API artifact(sanitized): %+v", sanitizedKeyManagers)
+	for _, keyManager := range sanitizedKeyManagers {
 		if keyManager == "all" {
 			// Add all the key manager settings to the km details
+			logger.LoggerTransformer.Infof("Adding all the key manager settings to the km details")
 			for _, km := range kmList {
+				if km.ResolvedKM.Organization != tenantDomain {
+					continue
+				}
 				newkmConfig := KeyManager{
-					Name:         km.ResolvedKM.Name,
+					Name:         tenantDomain + "-" + km.ResolvedKM.Name,
 					Issuer:       km.ResolvedKM.KeyManagerConfig.Issuer,
 					JWKSEndpoint: km.ResolvedKM.KeyManagerConfig.CertificateValue,
 					ClaimMapping: km.ResolvedKM.KeyManagerConfig.ClaimMappings,
 					K8sBackend: &K8sBackendConfig{
-						Name: km.K8sBackendName,
-						Port: km.K8sBackendPort,
+						Name:      km.K8sBackendName,
+						Port:      km.K8sBackendPort,
 						Namespace: km.K8sBackendNamespace,
 					},
 				}
@@ -997,15 +1094,17 @@ func mapKeyManagers(keyManagers []string) []KeyManager {
 		}
 		// Otherwise add only the specific key manager settings to the km details
 		for _, km := range kmList {
-			if keyManager == km.ResolvedKM.Name {
+			logger.LoggerTransformer.Debugf("Checking the key manager %s in the org %s", km.ResolvedKM.Name, km.ResolvedKM.Organization)
+			if keyManager == km.ResolvedKM.Name && km.ResolvedKM.Organization == tenantDomain {
+				logger.LoggerTransformer.Debug("Key manager with the given name and org found in the chache")
 				newkmConfig := KeyManager{
-					Name:         km.ResolvedKM.Name,
+					Name:         tenantDomain + "-" + km.ResolvedKM.Name,
 					Issuer:       km.ResolvedKM.KeyManagerConfig.Issuer,
 					JWKSEndpoint: km.ResolvedKM.KeyManagerConfig.CertificateValue,
 					ClaimMapping: km.ResolvedKM.KeyManagerConfig.ClaimMappings,
 					K8sBackend: &K8sBackendConfig{
-						Name: km.K8sBackendName,
-						Port: km.K8sBackendPort,
+						Name:      km.K8sBackendName,
+						Port:      km.K8sBackendPort,
 						Namespace: km.K8sBackendNamespace,
 					},
 				}
@@ -1014,5 +1113,6 @@ func mapKeyManagers(keyManagers []string) []KeyManager {
 		}
 
 	}
+	logger.LoggerTransformer.Debugf("Key manager details for the API: %+v", kmListForAPI)
 	return kmListForAPI
 }
