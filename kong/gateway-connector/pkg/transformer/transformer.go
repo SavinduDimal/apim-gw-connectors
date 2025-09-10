@@ -91,21 +91,35 @@ func GenerateCR(api string, organizationID string, apiUUID string, conf *config.
 	}
 
 	// create cors configurations
+	var corsConfig KongPluginConfig
+	var corsEnabled bool
+
 	if kongConf.CorsConfig != nil {
 		kongCorsConf := kongConf.CorsConfig
-
-		corsConfig := KongPluginConfig{
+		corsConfig = KongPluginConfig{
 			kongConstants.CORSOriginsField:     kongCorsConf.AccessControlAllowOrigins,
 			kongConstants.CORSCredentialsField: kongCorsConf.AccessControlAllowCredentials,
 			kongConstants.CORSHeadersField:     kongCorsConf.AccessControlAllowHeaders,
 			kongConstants.CORSMethodsField:     kongCorsConf.AccessControlAllowMethods,
 		}
-		kongCorsPlugin := GenerateKongPlugin(nil, kongConstants.CORSPlugin, kongConstants.APISuffix, corsConfig, kongCorsConf.CORSConfigurationEnabled)
-
-		k8sArtifact.KongPlugins[kongCorsPlugin.ObjectMeta.Name] = kongCorsPlugin
-		kongPlugins = append(kongPlugins, kongCorsPlugin.ObjectMeta.Name)
-		logger.LoggerUtils.Debugf("GenerateCR|CORS plugin added|%s\n", kongCorsPlugin.ObjectMeta.Name)
+		corsEnabled = kongCorsConf.CORSConfigurationEnabled
+		logger.LoggerUtils.Debugf("GenerateCR|Using provided CORS configuration|Enabled:%v\n", corsEnabled)
+	} else {
+		// Create default CORS configuration when none is provided
+		corsConfig = KongPluginConfig{
+			kongConstants.CORSOriginsField:     kongConstants.DefaultCORSOrigins,
+			kongConstants.CORSCredentialsField: kongConstants.DefaultCORSCredentials,
+			kongConstants.CORSHeadersField:     kongConstants.DefaultCORSHeaders,
+			kongConstants.CORSMethodsField:     kongConstants.DefaultCORSMethods,
+		}
+		corsEnabled = true
+		logger.LoggerUtils.Debugf("GenerateCR|Using default CORS configuration|Enabled:%v\n", corsEnabled)
 	}
+
+	kongCorsPlugin := GenerateKongPlugin(nil, kongConstants.CORSPlugin, kongConstants.APISuffix, corsConfig, corsEnabled)
+	k8sArtifact.KongPlugins[kongCorsPlugin.ObjectMeta.Name] = kongCorsPlugin
+	kongPlugins = append(kongPlugins, kongCorsPlugin.ObjectMeta.Name)
+	logger.LoggerUtils.Debugf("GenerateCR|CORS plugin added|%s\n", kongCorsPlugin.ObjectMeta.Name)
 
 	// generate production http routes
 	if endpoints, ok := createdEndpoints[constants.ProductionType]; ok {
@@ -163,6 +177,7 @@ func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]apimTransformer.Enviro
 		kongPlugin.ObjectMeta.Labels[kongConstants.APIUUIDLabel] = apiUUID
 		kongPlugin.ObjectMeta.Labels[kongConstants.RevisionIDLabel] = revisionID
 		kongPlugin.ObjectMeta.Labels[kongConstants.APINameLabel] = apiName
+		kongPlugin.ObjectMeta.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
 	}
 }
 

@@ -64,7 +64,7 @@ func ReconcileAPI(namespace, serviceName string) {
 			if api, exists := discoverPkg.APIMap[kongAPIUUID]; exists {
 				delete(discoverPkg.APIMap, kongAPIUUID)
 				delete(discoverPkg.APIHashMap, kongAPIUUID)
-				discoverPkg.QueueEvent(managementserver.DeleteEvent, api, serviceName, namespace, constants.DefaultKongAgentName)
+				discoverPkg.QueueEvent(managementserver.DeleteEvent, api, serviceName, namespace, constants.DefaultKongAgentName, kongAPIUUID)
 				loggers.LoggerWatcher.Infof("Deleted API %s corresponding to Service %s/%s due to no more HTTPRoutes.", kongAPIUUID, namespace, serviceName)
 			}
 		}
@@ -79,6 +79,7 @@ func ReconcileAPI(namespace, serviceName string) {
 	newHash := computeAPIHash(desiredAPI)
 
 	currentHash, apiExists := discoverPkg.APIHashMap[kongAPIUUID]
+	loggers.LoggerWatcher.Debugf("API %s has current hash: %s old hash: %s.", kongAPIUUID, newHash, currentHash)
 
 	if !apiExists || currentHash != newHash {
 		loggers.LoggerWatcher.Infof("API %s has changed (new hash: %s). Updating...", kongAPIUUID, newHash)
@@ -87,9 +88,10 @@ func ReconcileAPI(namespace, serviceName string) {
 		desiredAPI.RevisionID = revisionID
 
 		serviceLabels := map[string]string{
-			constants.RevisionIDLabel:  revisionID,
-			constants.KongAPIUUIDLabel: kongAPIUUID,
-			constants.APINameLabel:     desiredAPI.APIName,
+			constants.RevisionIDLabel:       revisionID,
+			constants.KongAPIUUIDLabel:      kongAPIUUID,
+			constants.APINameLabel:          desiredAPI.APIName,
+			constants.K8sInitiatedFromField: constants.DataPlaneOrigin,
 		}
 		if _, found := service.GetLabels()[constants.EnvironmentLabel]; !found {
 			serviceLabels[constants.EnvironmentLabel] = constants.EnvironmentProduction
@@ -98,9 +100,10 @@ func ReconcileAPI(namespace, serviceName string) {
 
 		for _, route := range httpRoutes {
 			routeLabels := map[string]string{
-				constants.RevisionIDLabel:  revisionID,
-				constants.KongAPIUUIDLabel: kongAPIUUID,
-				constants.APINameLabel:     desiredAPI.APIName,
+				constants.RevisionIDLabel:       revisionID,
+				constants.KongAPIUUIDLabel:      kongAPIUUID,
+				constants.APINameLabel:          desiredAPI.APIName,
+				constants.K8sInitiatedFromField: constants.DataPlaneOrigin,
 			}
 			if _, found := route.GetLabels()[constants.EnvironmentLabel]; !found {
 				routeLabels[constants.EnvironmentLabel] = constants.DefaultEnvironment
@@ -110,7 +113,7 @@ func ReconcileAPI(namespace, serviceName string) {
 
 		discoverPkg.APIHashMap[kongAPIUUID] = newHash
 		discoverPkg.APIMap[kongAPIUUID] = desiredAPI
-		discoverPkg.QueueEvent(managementserver.CreateEvent, desiredAPI, serviceName, namespace, constants.DefaultKongAgentName)
+		discoverPkg.QueueEvent(managementserver.CreateEvent, desiredAPI, serviceName, namespace, constants.DefaultKongAgentName, kongAPIUUID)
 
 		loggers.LoggerWatcher.Infof("Successfully reconciled and updated API %s for Service %s/%s", kongAPIUUID, namespace, serviceName)
 	} else {
@@ -184,7 +187,7 @@ func handleDeleteServiceResource(service *unstructured.Unstructured) {
 	if api, exists := discoverPkg.APIMap[kongAPIUUID]; exists {
 		delete(discoverPkg.APIMap, kongAPIUUID)
 		delete(discoverPkg.APIHashMap, kongAPIUUID)
-		discoverPkg.QueueEvent(managementserver.DeleteEvent, api, service.GetName(), service.GetNamespace(), constants.DefaultKongAgentName)
+		discoverPkg.QueueEvent(managementserver.DeleteEvent, api, service.GetName(), service.GetNamespace(), constants.DefaultKongAgentName, kongAPIUUID)
 		loggers.LoggerWatcher.Infof("Successfully processed %s/%s service deletion - API %s removed from system",
 			service.GetNamespace(), service.GetName(), kongAPIUUID)
 	}
@@ -223,7 +226,7 @@ func getAPIVersion(service, httpRoute *unstructured.Unstructured) string {
 
 // computeAPIHash generates a hash of the discoverPkg.API struct for comparison
 func computeAPIHash(api managementserver.API) string {
-	data := fmt.Sprintf("%v%v%v%v%v%v%v", api.APIName, api.Operations, api.CORSPolicy, api.ProdAIRL, api.SandAIRL, api.Environment, api.ProdEndpoint)
+	data := fmt.Sprintf("%v%v%v%v%v%v%v%v", api.APIName, api.Operations, api.CORSPolicy, api.ProdAIRL, api.SandAIRL, api.Environment, api.ProdEndpoint, api.AuthHeader)
 	hash := sha256.Sum256([]byte(data))
 	return hex.EncodeToString(hash[:])
 }
