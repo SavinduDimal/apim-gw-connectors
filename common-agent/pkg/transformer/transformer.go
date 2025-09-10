@@ -282,7 +282,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints st
 	// Since we only get the KM name, need to get the rest of the details from the internal map we keep
 	// after fetching the key managers from the control plane.
 	logger.LoggerTransformer.Debugf("KeyManager data from yaml: %+v", apiYamlData.KeyManagers)
-	kmData := mapKeyManagers(apiYamlData.KeyManagers)
+	kmData := mapKeyManagers(apiYamlData.KeyManagers, apiYamlData.OrganizationID)
 	logger.LoggerTransformer.Debugf("KeyManager data after mapping: %+v", kmData)
 	apk.KeyManagers = &kmData
 
@@ -298,7 +298,7 @@ func GenerateConf(APIJson string, certArtifact CertificateArtifact, endpoints st
 // Generate the interceptor policy if request or response policy exists
 func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []APIMOperationPolicy, resPolicies []APIMOperationPolicy, endpointList []Endpoint, defaultEndpointList []Endpoint) (*[]OperationPolicy, *[]OperationPolicy) {
 	var requestPolicyList, responsePolicyList []OperationPolicy
-	// var interceptorParams *InterceptorService
+	var interceptorParams *InterceptorService
 	var requestInterceptorPolicy, responseInterceptorPolicy, requestBackendJWTPolicy OperationPolicy
 	var mirrorRequestPolicy OperationPolicy
 	var mirrorUrls []string
@@ -306,59 +306,58 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 	if reqPolicyCount > 0 {
 		for _, reqPolicy := range reqPolicies {
 			logger.LoggerTransformer.Debugf("Request Policy: %v", reqPolicy)
-			// if strings.HasSuffix(reqPolicy.PolicyName, constants.InterceptorService) {
-			// 	logger.LoggerTransformer.Debugf("Interceptor Type Request Policy: %v", reqPolicy)
-			// 	logger.LoggerTransformer.Debugf("Interceptor Service URL: %v", reqPolicy.Parameters[interceptorServiceURL])
-			// 	logger.LoggerTransformer.Debugf("Interceptor Includes: %v", reqPolicy.Parameters[includes])
-			// 	interceptorServiceURL := reqPolicy.Parameters[interceptorServiceURL].(string)
-			// 	includes := reqPolicy.Parameters[includes].(string)
-			// 	substrings := strings.Split(includes, ",")
-			// 	bodyEnabled := false
-			// 	headerEnabled := false
-			// 	trailersEnabled := false
-			// 	contextEnabled := false
-			// 	sslEnabled := false
-			// 	tlsSecretName := ""
-			// 	tlsSecretKey := ""
-			// 	for _, substring := range substrings {
-			// 		if strings.Contains(substring, requestHeader) {
-			// 			headerEnabled = true
-			// 		} else if strings.Contains(substring, requestBody) {
-			// 			bodyEnabled = true
-			// 		} else if strings.Contains(substring, requestTrailers) {
-			// 			trailersEnabled = true
-			// 		} else if strings.Contains(substring, requestContext) {
-			// 			contextEnabled = true
-			// 		}
-			// 	}
+			if strings.HasSuffix(reqPolicy.PolicyName, constants.InterceptorService) {
+				logger.LoggerTransformer.Debugf("Interceptor Type Request Policy: %v", reqPolicy)
+				logger.LoggerTransformer.Debugf("Interceptor Service URL: %v", reqPolicy.Parameters[interceptorServiceURL])
+				logger.LoggerTransformer.Debugf("Interceptor Includes: %v", reqPolicy.Parameters[includes])
+				interceptorServiceURL := reqPolicy.Parameters[interceptorServiceURL].(string)
+				includes := reqPolicy.Parameters[includes].(string)
+				substrings := strings.Split(includes, ",")
+				bodyEnabled := false
+				headerEnabled := false
+				trailersEnabled := false
+				contextEnabled := false
+				sslEnabled := false
+				tlsSecretName := ""
+				tlsSecretKey := ""
+				for _, substring := range substrings {
+					if strings.Contains(substring, requestHeader) {
+						headerEnabled = true
+					} else if strings.Contains(substring, requestBody) {
+						bodyEnabled = true
+					} else if strings.Contains(substring, requestTrailers) {
+						trailersEnabled = true
+					} else if strings.Contains(substring, requestContext) {
+						contextEnabled = true
+					}
+				}
 
-			// 	if strings.Contains(interceptorServiceURL, https) {
-			// 		sslEnabled = true
-			// 	}
+				if strings.Contains(interceptorServiceURL, https) {
+					sslEnabled = true
+				}
 
-			// 	if sslEnabled {
-			// 		tlsSecretName = reqPolicy.PolicyID + requestInterceptorSecretName
-			// 		tlsSecretKey = tlsKey
-			// 	}
+				if sslEnabled {
+					tlsSecretName = reqPolicy.PolicyID + requestInterceptorSecretName
+					tlsSecretKey = tlsKey
+				}
 
-			// 	interceptorParams = &InterceptorService{
-			// 		BackendURL:      interceptorServiceURL,
-			// 		HeadersEnabled:  headerEnabled,
-			// 		BodyEnabled:     bodyEnabled,
-			// 		TrailersEnabled: trailersEnabled,
-			// 		ContextEnabled:  contextEnabled,
-			// 		TLSSecretName:   tlsSecretName,
-			// 		TLSSecretKey:    tlsSecretKey,
-			// 	}
+				interceptorParams = &InterceptorService{
+					BackendURL:      interceptorServiceURL,
+					HeadersEnabled:  headerEnabled,
+					BodyEnabled:     bodyEnabled,
+					TrailersEnabled: trailersEnabled,
+					ContextEnabled:  contextEnabled,
+					TLSSecretName:   tlsSecretName,
+					TLSSecretKey:    tlsSecretKey,
+				}
 
-			// 	// Create an instance of OperationPolicy
-			// 	requestInterceptorPolicy = OperationPolicy{
-			// 		PolicyName:    interceptorPolicy,
-			// 		PolicyVersion: v1,
-			// 		Parameters:    interceptorParams,
-			// 	}
-			// }
-			if reqPolicy.PolicyName == constants.LuaInterceptorService {
+				// Create an instance of OperationPolicy
+				requestInterceptorPolicy = OperationPolicy{
+					PolicyName:    interceptorPolicy,
+					PolicyVersion: v1,
+					Parameters:    interceptorParams,
+				}
+			} else if reqPolicy.PolicyName == constants.LuaInterceptorService {
 				logger.LoggerTransformer.Infof("Lua Interceptor Type Request Policy: %+v", reqPolicy)
 				luaPolicy := mapLuaInterceptorPolicy(reqPolicy)
 				requestPolicyList = append(requestPolicyList, luaPolicy)
@@ -541,56 +540,55 @@ func getReqAndResInterceptors(reqPolicyCount, resPolicyCount int, reqPolicies []
 
 	if resPolicyCount > 0 {
 		for _, resPolicy := range resPolicies {
-			// if resPolicy.PolicyName == constants.InterceptorService {
-			// 	interceptorServiceURL := resPolicy.Parameters[interceptorServiceURL].(string)
-			// 	includes := resPolicy.Parameters[includes].(string)
-			// 	substrings := strings.Split(includes, ",")
-			// 	bodyEnabled := false
-			// 	headerEnabled := false
-			// 	trailersEnabled := false
-			// 	contextEnabled := false
-			// 	sslEnabled := false
-			// 	tlsSecretName := ""
-			// 	tlsSecretKey := ""
-			// 	for _, substring := range substrings {
-			// 		if strings.Contains(substring, requestHeader) {
-			// 			headerEnabled = true
-			// 		} else if strings.Contains(substring, requestBody) {
-			// 			bodyEnabled = true
-			// 		} else if strings.Contains(substring, requestTrailers) {
-			// 			trailersEnabled = true
-			// 		} else if strings.Contains(substring, requestContext) {
-			// 			contextEnabled = true
-			// 		}
-			// 	}
+			if resPolicy.PolicyName == constants.InterceptorService {
+				interceptorServiceURL := resPolicy.Parameters[interceptorServiceURL].(string)
+				includes := resPolicy.Parameters[includes].(string)
+				substrings := strings.Split(includes, ",")
+				bodyEnabled := false
+				headerEnabled := false
+				trailersEnabled := false
+				contextEnabled := false
+				sslEnabled := false
+				tlsSecretName := ""
+				tlsSecretKey := ""
+				for _, substring := range substrings {
+					if strings.Contains(substring, requestHeader) {
+						headerEnabled = true
+					} else if strings.Contains(substring, requestBody) {
+						bodyEnabled = true
+					} else if strings.Contains(substring, requestTrailers) {
+						trailersEnabled = true
+					} else if strings.Contains(substring, requestContext) {
+						contextEnabled = true
+					}
+				}
 
-			// 	if strings.Contains(interceptorServiceURL, https) {
-			// 		sslEnabled = true
-			// 	}
+				if strings.Contains(interceptorServiceURL, https) {
+					sslEnabled = true
+				}
 
-			// 	if sslEnabled {
-			// 		tlsSecretName = resPolicies[0].PolicyID + responseInterceptorSecretName
-			// 		tlsSecretKey = tlsKey
-			// 	}
+				if sslEnabled {
+					tlsSecretName = resPolicies[0].PolicyID + responseInterceptorSecretName
+					tlsSecretKey = tlsKey
+				}
 
-			// 	interceptorParams = &InterceptorService{
-			// 		BackendURL:      interceptorServiceURL,
-			// 		HeadersEnabled:  headerEnabled,
-			// 		BodyEnabled:     bodyEnabled,
-			// 		TrailersEnabled: trailersEnabled,
-			// 		ContextEnabled:  contextEnabled,
-			// 		TLSSecretName:   tlsSecretName,
-			// 		TLSSecretKey:    tlsSecretKey,
-			// 	}
+				interceptorParams = &InterceptorService{
+					BackendURL:      interceptorServiceURL,
+					HeadersEnabled:  headerEnabled,
+					BodyEnabled:     bodyEnabled,
+					TrailersEnabled: trailersEnabled,
+					ContextEnabled:  contextEnabled,
+					TLSSecretName:   tlsSecretName,
+					TLSSecretKey:    tlsSecretKey,
+				}
 
-			// 	// Create an instance of OperationPolicy
-			// 	responseInterceptorPolicy = OperationPolicy{
-			// 		PolicyName:    interceptorPolicy,
-			// 		PolicyVersion: v1,
-			// 		Parameters:    interceptorParams,
-			// 	}
-			// }
-			if resPolicy.PolicyName == constants.LuaInterceptorService {
+				// Create an instance of OperationPolicy
+				responseInterceptorPolicy = OperationPolicy{
+					PolicyName:    interceptorPolicy,
+					PolicyVersion: v1,
+					Parameters:    interceptorParams,
+				}
+			} else if resPolicy.PolicyName == constants.LuaInterceptorService {
 				logger.LoggerTransformer.Debugf("Lua Interceptor Type Response Policy: %v", resPolicy)
 				luaPolicy := mapLuaInterceptorPolicy(resPolicy)
 				responsePolicyList = append(responsePolicyList, luaPolicy)
@@ -1006,7 +1004,7 @@ func mapLuaInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
 	if mountInConfigMap, ok := policy.Parameters["mountInConfigMap"].(bool); ok {
 		luaParams.MountInConfigMap = mountInConfigMap
 	}
-	
+
 	return OperationPolicy{
 		PolicyName:    luaInterceptorPolicy,
 		PolicyVersion: v1,
@@ -1049,7 +1047,7 @@ func mapWASMInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
 			wasmParams.HostKeys = hostKeys
 		}
 	}
-	
+
 	return OperationPolicy{
 		PolicyName:    wasmInterceptorPolicy,
 		PolicyVersion: v1,
@@ -1058,23 +1056,35 @@ func mapWASMInterceptorPolicy(policy APIMOperationPolicy) OperationPolicy {
 	}
 }
 
-func mapKeyManagers(keyManagers []string) []KeyManager {
+func mapKeyManagers(keyManagers []string, tenantDomain string) []KeyManager {
 	// Get the key manager cache instance and fetch all configured key managers
 	kmCache := cache.GetKeyManagerCacheInstance()
 	kmList := kmCache.GetAllKeyManagers()
 	kmListForAPI := []KeyManager{}
-	for _, keyManager := range keyManagers {
+	
+	sanitizedKeyManagers := make([]string, len(keyManagers))
+	for i, k := range keyManagers {
+		sanitizedKeyManagers[i] = cache.SanitizeKeyManagerName(k)
+	}
+
+	logger.LoggerTransformer.Debugf("Key manager cache: %+v", kmList)
+	logger.LoggerTransformer.Debugf("Key managers list in the API artifact(sanitized): %+v", sanitizedKeyManagers)
+	for _, keyManager := range sanitizedKeyManagers {
 		if keyManager == "all" {
 			// Add all the key manager settings to the km details
+			logger.LoggerTransformer.Infof("Adding all the key manager settings to the km details")
 			for _, km := range kmList {
+				if km.ResolvedKM.Organization != tenantDomain {
+					continue
+				}
 				newkmConfig := KeyManager{
-					Name:         km.ResolvedKM.Name,
+					Name:         tenantDomain + "-" + km.ResolvedKM.Name,
 					Issuer:       km.ResolvedKM.KeyManagerConfig.Issuer,
 					JWKSEndpoint: km.ResolvedKM.KeyManagerConfig.CertificateValue,
 					ClaimMapping: km.ResolvedKM.KeyManagerConfig.ClaimMappings,
 					K8sBackend: &K8sBackendConfig{
-						Name: km.K8sBackendName,
-						Port: km.K8sBackendPort,
+						Name:      km.K8sBackendName,
+						Port:      km.K8sBackendPort,
 						Namespace: km.K8sBackendNamespace,
 					},
 				}
@@ -1084,15 +1094,17 @@ func mapKeyManagers(keyManagers []string) []KeyManager {
 		}
 		// Otherwise add only the specific key manager settings to the km details
 		for _, km := range kmList {
-			if keyManager == km.ResolvedKM.Name {
+			logger.LoggerTransformer.Debugf("Checking the key manager %s in the org %s", km.ResolvedKM.Name, km.ResolvedKM.Organization)
+			if keyManager == km.ResolvedKM.Name && km.ResolvedKM.Organization == tenantDomain {
+				logger.LoggerTransformer.Debug("Key manager with the given name and org found in the chache")
 				newkmConfig := KeyManager{
-					Name:         km.ResolvedKM.Name,
+					Name:         tenantDomain + "-" + km.ResolvedKM.Name,
 					Issuer:       km.ResolvedKM.KeyManagerConfig.Issuer,
 					JWKSEndpoint: km.ResolvedKM.KeyManagerConfig.CertificateValue,
 					ClaimMapping: km.ResolvedKM.KeyManagerConfig.ClaimMappings,
 					K8sBackend: &K8sBackendConfig{
-						Name: km.K8sBackendName,
-						Port: km.K8sBackendPort,
+						Name:      km.K8sBackendName,
+						Port:      km.K8sBackendPort,
 						Namespace: km.K8sBackendNamespace,
 					},
 				}
@@ -1101,5 +1113,6 @@ func mapKeyManagers(keyManagers []string) []KeyManager {
 		}
 
 	}
+	logger.LoggerTransformer.Debugf("Key manager details for the API: %+v", kmListForAPI)
 	return kmListForAPI
 }

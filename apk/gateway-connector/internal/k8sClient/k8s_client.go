@@ -913,6 +913,8 @@ func UndeploySubscriptionAIRateLimitPolicyCR(crName string, k8sClient client.Cli
 func UpdateSecurityPolicyCRs(keymanagerName string, tenantDomain string, k8sClient client.Client, removeProvider bool) error {
 	conf, _ := config.ReadConfigs()
 	kmCache := cache.GetKeyManagerCacheInstance()
+	kmNameWithOrg := tenantDomain + "-" + keymanagerName
+	loggers.LoggerK8sClient.Debugf("Checking for SecurityPolicy CRs for the org: %s", tenantDomain)
 	// SecurityPolicy CRs are filtered by organization
 	labelMap := map[string]string{"kgw.wso2.com/organization": tenantDomain}
 	listOption := &client.ListOptions{
@@ -930,13 +932,13 @@ func UpdateSecurityPolicyCRs(keymanagerName string, tenantDomain string, k8sClie
 	}
 	for _, securitypolicy := range securityPolicyList.Items {
 		providers := securitypolicy.Spec.JWT.Providers
-		loggers.LoggerK8sClient.Infof("Providers: %+v", providers)
+		loggers.LoggerK8sClient.Debugf("Providers: %+v", providers)
 		updated := false    // Track if any changes were made
 		if removeProvider { // Remove the provider details from JWT segment in each CR
 			loggers.LoggerK8sClient.Infof("Removing the provider from the SecurityPolicy")
 			updatedProviders := []gatewayv1alpha1.JWTProvider{}
 			for _, provider := range providers {
-				if provider.Name != keymanagerName {
+				if provider.Name != kmNameWithOrg {
 					updatedProviders = append(updatedProviders, provider)
 				} else {
 					updated = true // Mark that we removed a provider
@@ -946,8 +948,8 @@ func UpdateSecurityPolicyCRs(keymanagerName string, tenantDomain string, k8sClie
 			loggers.LoggerK8sClient.Infof("Removed the %s provider details from JWT segment in SecurityPolicy CR: %s", keymanagerName, securitypolicy.Name)
 		} else { // Update the provider details in the CRs
 			for i, provider := range providers {
-				if provider.Name == keymanagerName {
-					updatedKMFromAPIM, exists := kmCache.GetKeyManager(keymanagerName)
+				if provider.Name == kmNameWithOrg {
+					updatedKMFromAPIM, exists := kmCache.GetKeyManager(keymanagerName, tenantDomain)
 
 					if !exists {
 						loggers.LoggerK8sClient.Errorf("KeyManager '%s' not found in cache", keymanagerName)
@@ -1378,7 +1380,8 @@ func GenerateKMBackendCR(km eventhubTypes.ResolvedKeyManager, backendPort int, b
 func GenerateKMBackendTLSCR(km eventhubTypes.ResolvedKeyManager, backendName, namespace, hostname string) (*gwapiv1a3.BackendTLSPolicy, *corev1.Secret) {
 	var validation gwapiv1a3.BackendTLSPolicyValidation
 	var secret *corev1.Secret
-
+	conf, _ := config.ReadConfigs()
+	loggers.LoggerK8sClient.Infof("CA Cert Secret Name: %s", conf.ControlPlane.Certificates.CaCertSecretName)
 	if km.KeyManagerConfig.CertificateType == "JWKS" {
 		loggers.LoggerK8sClient.Info("JWKS Certificate Type")
 		validation = gwapiv1a3.BackendTLSPolicyValidation{
@@ -1387,7 +1390,7 @@ func GenerateKMBackendTLSCR(km eventhubTypes.ResolvedKeyManager, backendName, na
 				{
 					Group: "",
 					Kind:  "Secret",
-					Name:  gwapiv1a2.ObjectName("apim-ca-certificate"),
+					Name:  gwapiv1a2.ObjectName(conf.ControlPlane.Certificates.CaCertSecretName),
 				},
 			},
 		}
@@ -1469,13 +1472,12 @@ func DeleteBackendCRByName(backendName, namespace string, k8sClient client.Clien
 	return nil
 }
 
-
 // RetrieveSharedSubscriptionRateLimitPolicyFromK8s retrieves the shared BackendTrafficPolicy for the given organization
 // and extracts all policy names from the rules headers
 func RetrieveSharedSubscriptionRateLimitPolicyFromK8s(organization string, k8sClient client.Client) ([]string, error) {
 	conf, _ := config.ReadConfigs()
 	sharedPolicyName := utils.CreateSubscriptionPolicyName(SharedRateLimitPolicyName, organization)
-	
+
 	// Get the shared BackendTrafficPolicy
 	existingPolicy := &gatewayv1alpha1.BackendTrafficPolicy{}
 	err := k8sClient.Get(context.Background(), client.ObjectKey{
@@ -1505,7 +1507,7 @@ func RetrieveSharedSubscriptionRateLimitPolicyFromK8s(organization string, k8sCl
 		}
 	}
 
-	loggers.LoggerK8sClient.Debugf("Retrieved %d policy names from shared BackendTrafficPolicy for organization %s: %v", 
+	loggers.LoggerK8sClient.Debugf("Retrieved %d policy names from shared BackendTrafficPolicy for organization %s: %v",
 		len(policyNames), organization, policyNames)
 	return policyNames, nil
 }

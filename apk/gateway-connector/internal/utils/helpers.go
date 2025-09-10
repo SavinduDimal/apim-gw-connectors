@@ -29,6 +29,7 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+	"strings"
 
 	logger "github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector/internal/loggers"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/config"
@@ -53,8 +54,22 @@ func ExtractHostnameAndPort(serverURL string) (string, int, error) {
 	host, port := u.Hostname(), u.Port()
 	portInt, err := strconv.Atoi(port)
 	if err != nil {
-		return "", -1, err
+		// No explicit port provided, use default based on scheme
+		switch u.Scheme {
+			case "https":
+				portInt = 443
+			case "http":
+				portInt = 80
+			default:
+				// For unknown schemes, try to infer from URL or use a reasonable default
+				if strings.Contains(strings.ToLower(serverURL), "https") {
+					portInt = 443
+				} else {
+					portInt = 80
+				}
+		}
 	}
+	logger.LoggerUtils.Infof("Host: %s, Port: %d", host, portInt)
 	return host, portInt, nil
 }
 

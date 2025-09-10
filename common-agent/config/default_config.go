@@ -46,6 +46,9 @@ var defaultConfig = &Config{
 		},
 		InternalKeyIssuer: "http://am.wso2.com:443/token",
 		Provider:          "admin",
+		Certificates: certificates{
+			CaCertSecretName: "$env{CA_CERT_SECRET_NAME}",
+		},
 	},
 	Agent: agent{
 		Enabled: true,

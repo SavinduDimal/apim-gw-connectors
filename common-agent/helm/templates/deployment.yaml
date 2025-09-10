@@ -60,6 +60,8 @@ spec:
               value: {{ .Values.service.name }}.{{ .Release.Namespace }}.svc
             - name: APIM_AGENT_GRPC_PORT
               value: "18000"
+            - name: CA_CERT_SECRET_NAME
+              value: "{{ .Values.controlPlane.certificates.caCertSecretName | default "apim-ca-certificate" }}"
           volumeMounts:
             - name: log-conf-volume
               mountPath: /home/wso2/conf/

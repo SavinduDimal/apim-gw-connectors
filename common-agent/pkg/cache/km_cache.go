@@ -34,10 +34,10 @@ type KeyManagerCache struct {
 
 // KMCacheObject represents the resolved Key Manager details along with the backend, backendTLS details in the cache
 type KMCacheObject struct {
-	ResolvedKM *eventhubTypes.ResolvedKeyManager
-	K8sBackendName string
+	ResolvedKM          *eventhubTypes.ResolvedKeyManager
+	K8sBackendName      string
 	K8sBackendNamespace string
-	K8sBackendPort int
+	K8sBackendPort      int
 }
 
 var (
@@ -65,21 +65,22 @@ func (kmc *KeyManagerCache) AddOrUpdateKeyManager(km *KMCacheObject) {
 
 	kmc.mu.Lock()
 	defer kmc.mu.Unlock()
-	km.ResolvedKM.Name = sanitizeKeyManagerName(km.ResolvedKM.Name)
-	kmc.keyManagers[km.ResolvedKM.Name] = km
+	km.ResolvedKM.Name = SanitizeKeyManagerName(km.ResolvedKM.Name)
+	logger.LoggerCache.Infof("KeyManager '%s' added/updated in cache", km.ResolvedKM.Organization+"-"+km.ResolvedKM.Name)
+	kmc.keyManagers[km.ResolvedKM.Organization+"-"+km.ResolvedKM.Name] = km
 	logger.LoggerCache.Infof("KeyManager '%s' added/updated in cache", km.ResolvedKM.Name)
 }
 
 // GetKeyManager retrieves a Key Manager by name from the cache
-func (kmc *KeyManagerCache) GetKeyManager(kmName string) (*KMCacheObject, bool) {
+func (kmc *KeyManagerCache) GetKeyManager(kmName, kmOrg string) (*KMCacheObject, bool) {
 	kmc.mu.RLock()
 	defer kmc.mu.RUnlock()
-
-	km, exists := kmc.keyManagers[kmName]
+	kmNameWithOrg := kmOrg+"-"+SanitizeKeyManagerName(kmName)
+	km, exists := kmc.keyManagers[kmNameWithOrg]
 	if exists {
-		logger.LoggerCache.Debugf("KeyManager '%s' found in cache", kmName)
+		logger.LoggerCache.Infof("KeyManager '%s' found in cache", kmNameWithOrg)
 	} else {
-		logger.LoggerCache.Debugf("KeyManager '%s' not found in cache", kmName)
+		logger.LoggerCache.Infof("KeyManager '%s' not found in cache", kmNameWithOrg)
 	}
 	return km, exists
 }
@@ -95,22 +96,22 @@ func (kmc *KeyManagerCache) GetAllKeyManagers() map[string]*KMCacheObject {
 		result[name] = km
 	}
 
-	logger.LoggerCache.Debugf("Retrieved %d KeyManagers from cache", len(result))
+	logger.LoggerCache.Infof("Retrieved %d KeyManagers from cache", len(result))
 	return result
 }
 
 // DeleteKeyManager removes a Key Manager from the cache
-func (kmc *KeyManagerCache) DeleteKeyManager(kmName string) bool {
+func (kmc *KeyManagerCache) DeleteKeyManager(kmName, kmOrg string) bool {
 	kmc.mu.Lock()
 	defer kmc.mu.Unlock()
-
-	if _, exists := kmc.keyManagers[kmName]; exists {
-		delete(kmc.keyManagers, kmName)
-		logger.LoggerCache.Infof("KeyManager '%s' deleted from cache", kmName)
+	kmNameWithOrg := kmOrg+"-"+SanitizeKeyManagerName(kmName)
+	if _, exists := kmc.keyManagers[kmNameWithOrg]; exists {
+		delete(kmc.keyManagers, kmNameWithOrg)
+		logger.LoggerCache.Infof("KeyManager '%s' deleted from cache", kmNameWithOrg)
 		return true
 	}
 
-	logger.LoggerCache.Warnf("Attempted to delete non-existent KeyManager '%s' from cache", kmName)
+	logger.LoggerCache.Warnf("Attempted to delete non-existent KeyManager '%s' from cache", kmNameWithOrg)
 	return false
 }
 
@@ -154,7 +155,8 @@ func (kmc *KeyManagerCache) IsKeyManagerEnabled(kmName string) bool {
 	return false
 }
 
-func sanitizeKeyManagerName(input string) string {
+// SanitizeKeyManagerName sanitizes the key manager name by converting it to envoy acceptable format
+func SanitizeKeyManagerName(input string) string {
 	lower := strings.ToLower(input)
 	reg := regexp.MustCompile(`[^a-z0-9]+`)
 	sanitized := reg.ReplaceAllString(lower, "")
