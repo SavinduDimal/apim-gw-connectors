@@ -26,6 +26,7 @@ import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.core.http.rest.PagedIterable;
 import com.azure.core.management.AzureEnvironment;
 import com.azure.core.management.profile.AzureProfile;
+import com.azure.core.util.Context;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.azure.resourcemanager.apimanagement.ApiManagementManager;
 import com.azure.resourcemanager.apimanagement.models.ApiContract;
@@ -107,7 +108,13 @@ public class AzureFederatedAPIDiscovery implements FederatedAPIDiscovery {
 
     @Override
     public List<API> discoverAPI() {
-        PagedIterable<ApiContract> apis = manager.apis().listByService(resourceGroup, serviceName);
+        PagedIterable<ApiContract> apis = manager.apis().listByService(resourceGroup, serviceName, "isCurrent eq true",
+                        null, /* top */
+                        null, /* skip */
+                        null, /* tags */
+                        null, /* expandApiVersionSet */
+                        Context.NONE
+                );
         List<API> retrievedAPIs = new ArrayList<>();
         for (ApiContract api : apis) {
             try {
