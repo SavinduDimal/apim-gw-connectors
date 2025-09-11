@@ -20,6 +20,7 @@ package org.wso2.azure.gw.client.policy;
 
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
+import org.wso2.azure.gw.client.AzureConstants;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -38,16 +39,28 @@ import javax.xml.transform.stream.StreamResult;
 public class AzurePolicyBuilder {
     private final DocumentBuilder documentBuilder;
     private Element basePolicyRoot;
-    private List<AzurePolicy> policies;
+    private List<AzurePolicy> inboundPolicies;
+    private List<AzurePolicy> outboundPolicies;
+    private List<AzurePolicy> onErrorPolicies;
 
     protected AzurePolicyBuilder(DocumentBuilder documentBuilder, Element basePolicyRoot) {
         this.documentBuilder = documentBuilder;
         this.basePolicyRoot = basePolicyRoot;
-        this.policies = new ArrayList<>();
+        this.inboundPolicies = new ArrayList<>();
+        this.outboundPolicies = new ArrayList<>();
+        this.onErrorPolicies = new ArrayList<>();
     }
 
-    public AzurePolicyBuilder addPolicy(AzurePolicy policy) throws APIManagementException {
-        policies.add(policy);
+    public AzurePolicyBuilder addPolicy(AzurePolicy policy, String direction) throws APIManagementException {
+        if (direction.equalsIgnoreCase(AzureConstants.POLICY_DIRECTION_REQUEST)) {
+            inboundPolicies.add(policy);
+        } else if (direction.equalsIgnoreCase(AzureConstants.POLICY_DIRECTION_RESPONSE)) {
+            outboundPolicies.add(policy);
+        } else if (direction.equalsIgnoreCase(AzureConstants.POLICY_DIRECTION_FAULT)) {
+            onErrorPolicies.add(policy);
+        } else {
+            throw new APIManagementException(direction + " flow policies are not supported by Azure APIs.");
+        }
         policy.processDocument(documentBuilder);
         return this;
     }
@@ -56,24 +69,48 @@ public class AzurePolicyBuilder {
         if (basePolicyRoot == null) {
             throw new APIManagementException("Base policy is not initialized");
         }
+
+        // Add inbound policies
         Element inbound = AzurePolicyUtil.firstChildElementByTagName(basePolicyRoot, "inbound");
         if (inbound == null) {
             throw new APIManagementException("Base policy does not contain inbound element");
         }
 
         // CORS policies should be added first
-        for (AzurePolicy policy : policies) {
+        for (AzurePolicy policy : inboundPolicies) {
             if (policy instanceof AzureCORSPolicy) {
                 Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
                 inbound.appendChild(imported);
             }
         }
 
-        for (AzurePolicy policy : policies) {
+        for (AzurePolicy policy : inboundPolicies) {
             if (!(policy instanceof AzureCORSPolicy)) {
                 Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
                 inbound.appendChild(imported);
             }
+        }
+
+        // Add outbound policies
+        Element outbound = AzurePolicyUtil.firstChildElementByTagName(basePolicyRoot, "outbound");
+        if (outbound == null) {
+            throw new APIManagementException("Base policy does not contain outbound element");
+        }
+
+        for (AzurePolicy policy : outboundPolicies) {
+            Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
+            outbound.appendChild(imported);
+        }
+
+        // Add on-error policies
+        Element onError = AzurePolicyUtil.firstChildElementByTagName(basePolicyRoot, "on-error");
+        if (onError == null) {
+            throw new APIManagementException("Base policy does not contain on-error element");
+        }
+
+        for (AzurePolicy policy : onErrorPolicies) {
+            Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
+            onError.appendChild(imported);
         }
 
         try {

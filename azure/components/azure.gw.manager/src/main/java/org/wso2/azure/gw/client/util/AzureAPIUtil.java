@@ -54,6 +54,7 @@ import org.wso2.azure.gw.client.policy.AzureCORSPolicy;
 import org.wso2.azure.gw.client.policy.AzureJWTPolicy;
 import org.wso2.azure.gw.client.policy.AzurePolicyBuilder;
 import org.wso2.azure.gw.client.policy.AzurePolicyBuilderFactory;
+import org.wso2.azure.gw.client.policy.AzureSetHeaderPolicy;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.APIIdentifier;
@@ -147,18 +148,14 @@ public class AzureAPIUtil {
             AzurePolicyBuilderFactory policyBuilderFactory = new AzurePolicyBuilderFactory();
             AzurePolicyBuilder apiLevelPolicyBuilder =
                     policyBuilderFactory.newPolicyBuilder();
-            apiLevelPolicyBuilder.addPolicy(new AzureCORSPolicy(api.getCorsConfiguration()));
+            apiLevelPolicyBuilder.addPolicy(new AzureCORSPolicy(api.getCorsConfiguration()),
+                    AzureConstants.POLICY_DIRECTION_REQUEST);
 
             //configure API level policies
             List<OperationPolicy> apiPolicies = api.getApiPolicies();
             if (apiPolicies != null) {
                 for (OperationPolicy policy : apiPolicies) {
-                    if (policy.getPolicyName().equals(AzureConstants.AZURE_OPERATION_POLICY_NAME)) {
-                        String openIdURL = policy.getParameters()
-                                .get(AzureConstants.AZURE_OPERATION_POLICY_PARAMETER_OPENID_URL).toString();
-                        apiLevelPolicyBuilder.addPolicy(new AzureJWTPolicy(openIdURL));
-                        break;
-                    }
+                    addPoliciesToPolicyBuilder(policy, apiLevelPolicyBuilder);
                 }
             }
 
@@ -170,8 +167,8 @@ public class AzureAPIUtil {
                                         .withValue(apiLevelPolicyContent), "*", Context.NONE);
                 if (response.getStatusCode() / 100 != 2) {
                     String errBody = response.getValue().value();
-                    log.error("Failed to attach CORS policy: HTTP " + response.getStatusCode() + " body=" + errBody);
-                    throw new APIManagementException("Failed to attach CORS policy: HTTP " + response.getStatusCode()
+                    log.error("Failed to attach Azure policies: HTTP " + response.getStatusCode() + " body=" + errBody);
+                    throw new APIManagementException("Failed to attach Azure policies: HTTP " + response.getStatusCode()
                             + " body=" + errBody);
                 }
             }
@@ -182,35 +179,32 @@ public class AzureAPIUtil {
 
             for (URITemplate resource : api.getUriTemplates()) {
                 for (OperationPolicy policy : resource.getOperationPolicies()) {
-                    if (policy.getPolicyName().equals(AzureConstants.AZURE_OPERATION_POLICY_NAME)) {
-                        AzurePolicyBuilder operationLevelPolicyBuilder =
-                                policyBuilderFactory.newPolicyBuilder();
-                        String openIdURL = policy.getParameters()
-                                .get(AzureConstants.AZURE_OPERATION_POLICY_PARAMETER_OPENID_URL).toString();
-                        operationLevelPolicyBuilder.addPolicy(new AzureJWTPolicy(openIdURL));
-                        String operationLevelPolicyContent = operationLevelPolicyBuilder.build();
+                    AzurePolicyBuilder operationLevelPolicyBuilder =
+                            policyBuilderFactory.newPolicyBuilder();
+                    addPoliciesToPolicyBuilder(policy, operationLevelPolicyBuilder);
+                    String operationLevelPolicyContent = operationLevelPolicyBuilder.build();
 
-                        PolicyContractInner resourceLevelJWTPolicy = new PolicyContractInner()
-                                .withFormat(PolicyContentFormat.XML)
-                                .withValue(operationLevelPolicyContent);
+                    PolicyContractInner resourceLevelJWTPolicy = new PolicyContractInner()
+                            .withFormat(PolicyContentFormat.XML)
+                            .withValue(operationLevelPolicyContent);
 
-                        String operationId = null;
-                        for (OperationContract operationContract : operationContracts) {
-                            if (operationContract.method().equals(resource.getHTTPVerb()) &&
+                    String operationId = null;
+                    for (OperationContract operationContract : operationContracts) {
+                        if (operationContract.method().equals(resource.getHTTPVerb()) &&
                                 operationContract.urlTemplate().equals(resource.getUriTemplate())) {
-                                operationId = operationContract.name();
-                            }
+                            operationId = operationContract.name();
+                            break;
                         }
-                        if (operationId == null) {
-                            throw new APIManagementException("Azure API operation not found for resource: " +
-                                    resource.getUriTemplate());
-                        }
-
-                        ApiOperationPoliciesCreateOrUpdateResponse response = manager.serviceClient()
-                                .getApiOperationPolicies().createOrUpdateWithResponse(resourceGroup, serviceName,
-                                        apiContract.name(), operationId, PolicyIdName.POLICY, resourceLevelJWTPolicy,
-                                        "*", Context.NONE);
                     }
+                    if (operationId == null) {
+                        throw new APIManagementException("Azure API operation not found for resource: " +
+                                resource.getUriTemplate());
+                    }
+
+                    ApiOperationPoliciesCreateOrUpdateResponse response = manager.serviceClient()
+                            .getApiOperationPolicies().createOrUpdateWithResponse(resourceGroup, serviceName,
+                                    apiContract.name(), operationId, PolicyIdName.POLICY, resourceLevelJWTPolicy,
+                                    "*", Context.NONE);
                 }
             }
 
@@ -238,6 +232,24 @@ public class AzureAPIUtil {
             return gson.toJson(referenceArtifact);
         } catch (Exception e) {
             throw new APIManagementException("Error while deploying API to Azure Gateway: " + api.getId(), e);
+        }
+    }
+
+    private static void addPoliciesToPolicyBuilder(OperationPolicy policy, AzurePolicyBuilder policyBuilder)
+            throws APIManagementException {
+        if (policy.getPolicyName().equals(AzureConstants.AZURE_OAUTH2_OPERATION_POLICY_NAME)) {
+            String openIdURL = policy.getParameters()
+                    .get(AzureConstants.AZURE_OAUTH2_OPERATION_POLICY_PARAMETER_OPENID_URL).toString();
+            policyBuilder.addPolicy(new AzureJWTPolicy(openIdURL), policy.getDirection());
+        } else if (policy.getPolicyName().equals(AzureConstants.AZURE_SET_HEADER_POLICY_NAME)) {
+            String headerName = policy.getParameters()
+                    .get(AzureConstants.AZURE_SET_HEADER_POLICY_HEADER_NAME).toString();
+            String headerValue = policy.getParameters()
+                    .get(AzureConstants.AZURE_SET_HEADER_POLICY_HEADER_VALUE).toString();
+            String existsAction = policy.getParameters()
+                    .get(AzureConstants.AZURE_SET_HEADER_POLICY_EXISTS_ACTION).toString();
+            policyBuilder.addPolicy(new AzureSetHeaderPolicy(headerName, headerValue,
+                    existsAction), policy.getDirection());
         }
     }
 

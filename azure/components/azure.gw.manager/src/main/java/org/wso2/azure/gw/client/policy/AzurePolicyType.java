@@ -22,5 +22,5 @@ package org.wso2.azure.gw.client.policy;
  * Enum representing the types of available Azure policies.
  */
 public enum AzurePolicyType {
-    CORS, JWT
+    CORS, JWT, SET_HEADER
 }

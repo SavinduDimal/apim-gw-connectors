@@ -49,9 +49,17 @@ public class AzureConstants {
 
     public static final String API_CONTEXT_VERSION_PLACEHOLDER = "{version}";
 
-    public static final String AZURE_OPERATION_POLICY_NAME = "azureOAuth2";
-    public static final String AZURE_OPERATION_POLICY_PARAMETER_OPENID_URL = "openIdURL";
-    public static final String AZURE_JWT_OPERATION_POLICY_OPENID_URL_PLACEHOLDER = "${openIdURL}";
+    public static final String AZURE_OAUTH2_OPERATION_POLICY_NAME = "azureOAuth2";
+    public static final String AZURE_OAUTH2_OPERATION_POLICY_PARAMETER_OPENID_URL = "openIdURL";
+
+    public static final String AZURE_SET_HEADER_POLICY_NAME = "azureSetHeader";
+    public static final String AZURE_SET_HEADER_POLICY_HEADER_NAME = "headerName";
+    public static final String AZURE_SET_HEADER_POLICY_HEADER_VALUE = "headerValue";
+    public static final String AZURE_SET_HEADER_POLICY_EXISTS_ACTION = "existsAction";
+
+    public static final String POLICY_DIRECTION_REQUEST = "request";
+    public static final String POLICY_DIRECTION_RESPONSE = "response";
+    public static final String POLICY_DIRECTION_FAULT = "fault";
 
     public static final String AZURE_CORS_POLICY_ALLOWED_ORIGINS = "allowed-origins";
     public static final String AZURE_CORS_POLICY_ALLOWED_METHODS = "allowed-methods";
@@ -61,6 +69,7 @@ public class AzureConstants {
     public static final String AZURE_CORS_POLICY_FILENAME = "policies/cors.xml";
     public static final String AZURE_JWT_POLICY_FILENAME = "policies/jwt.xml";
     public static final String AZURE_BASE_POLICY_FILENAME = "policies/base.xml";
+    public static final String AZURE_SET_HEADER_POLICY_FILENAME = "policies/set-header.xml";
 
     // Environment related constants
     public static final String AZURE_ENVIRONMENT_TENANT_ID = "tenant_id";
