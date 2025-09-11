@@ -24,6 +24,7 @@ import com.azure.core.http.HttpMethod;
 import com.azure.core.http.HttpPipeline;
 import com.azure.core.http.HttpRequest;
 import com.azure.core.http.HttpResponse;
+import com.azure.core.http.rest.PagedIterable;
 import com.azure.core.util.Context;
 import com.azure.core.util.IterableStream;
 import com.azure.resourcemanager.apimanagement.ApiManagementManager;
@@ -31,6 +32,7 @@ import com.azure.resourcemanager.apimanagement.fluent.models.PolicyContractInner
 import com.azure.resourcemanager.apimanagement.models.ApiContract;
 import com.azure.resourcemanager.apimanagement.models.ApiOperationPoliciesCreateOrUpdateResponse;
 import com.azure.resourcemanager.apimanagement.models.ApiPoliciesCreateOrUpdateResponse;
+import com.azure.resourcemanager.apimanagement.models.ApiRevisionContract;
 import com.azure.resourcemanager.apimanagement.models.ApiVersionSetContract;
 import com.azure.resourcemanager.apimanagement.models.ContentFormat;
 import com.azure.resourcemanager.apimanagement.models.OperationContract;
@@ -118,7 +120,7 @@ public class AzureAPIUtil {
                 azureTransports.add(Protocol.HTTPS);
             }
 
-            String versionSetId = AzureConstants.AZURE_VERSION_SET_ID_PREFIX + api.getId().getApiName();
+            String versionSetId = api.getId().getApiName();
             ApiVersionSetContract versionSetContract = manager.apiVersionSets().define(versionSetId)
                     .withExistingService(resourceGroup, serviceName).withDisplayName(versionSetId)
                     .withVersioningScheme(VersioningScheme.SEGMENT).create();
@@ -212,27 +214,44 @@ public class AzureAPIUtil {
                 log.debug("API deployed successfully to Azure Gateway: " + api.getUuid());
             }
 
-            JsonObject referenceArtifact = new JsonObject();
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_UUID, api.getUuid());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_CONTEXT, api.getContext());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_ID, apiContract.id());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_ARTIFACT_TYPE, apiContract.type());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_DISPLAY_NAME,
-                    apiContract.displayName());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_VERSION, apiContract.apiVersion());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_PATH, apiContract.path());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_SERVICE_URL,
-                    apiContract.serviceUrl());
-            referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_VERSION_SET_ID,
-                    apiContract.apiVersionSetId());
-            referenceArtifact.addProperty(
-                    AzureConstants.AZURE_EXTERNAL_REFERENCE_VERSIONING_SCHEME,
-                    versionSetContract.versioningScheme().toString());
-            Gson gson = new Gson();
-            return gson.toJson(referenceArtifact);
+            PagedIterable<ApiRevisionContract> revisions = manager.apiRevisions().listByService(resourceGroup,
+                serviceName, apiContract.name(), "isCurrent eq true", /* top */ null, /* skip */ null, Context.NONE);
+            ApiRevisionContract revisionContract = revisions.stream().findFirst().orElse(null);
+            if (revisionContract == null) {
+                throw new APIManagementException("Created API Revision not found for api: " + api.getDisplayName());
+            }
+
+            return generateReferenceArtifact(api, apiContract, versionSetContract, revisionContract);
         } catch (Exception e) {
             throw new APIManagementException("Error while deploying API to Azure Gateway: " + api.getId(), e);
         }
+    }
+
+    public static String generateReferenceArtifact(API api, ApiContract apiContract,
+                                                   ApiVersionSetContract versionSetContract,
+                                                   ApiRevisionContract apiRevisionContract) {
+        JsonObject referenceArtifact = new JsonObject();
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_UUID, api.getUuid());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_CONTEXT, api.getContext());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_ID, apiContract.id());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_ARTIFACT_TYPE, apiContract.type());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_DISPLAY_NAME,
+                apiContract.displayName());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_VERSION, apiContract.apiVersion());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_PATH, apiContract.path());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_SERVICE_URL,
+                apiContract.serviceUrl());
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_VERSION_SET_ID,
+                apiContract.apiVersionSetId());
+        if (versionSetContract != null) {
+            referenceArtifact.addProperty(
+                    AzureConstants.AZURE_EXTERNAL_REFERENCE_VERSIONING_SCHEME,
+                    versionSetContract.versioningScheme().toString());
+        }
+        referenceArtifact.addProperty(AzureConstants.AZURE_EXTERNAL_REFERENCE_CREATED_TIME_EPOCH,
+                apiRevisionContract.createdDateTime().toInstant().toEpochMilli());
+        Gson gson = new Gson();
+        return gson.toJson(referenceArtifact);
     }
 
     private static void addPoliciesToPolicyBuilder(OperationPolicy policy, AzurePolicyBuilder policyBuilder)

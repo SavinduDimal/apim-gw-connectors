@@ -42,10 +42,10 @@ public class AzureConstants {
     public static final String AZURE_EXTERNAL_REFERENCE_SERVICE_URL = "serviceUrl";
     public static final String AZURE_EXTERNAL_REFERENCE_VERSION_SET_ID = "versionSetId";
     public static final String AZURE_EXTERNAL_REFERENCE_VERSIONING_SCHEME = "versioningScheme";
+    public static final String AZURE_EXTERNAL_REFERENCE_CREATED_TIME_EPOCH = "createdTimeEpoch";
 
     public static final String AZURE_OPENAPI_EXPORT_VERSION = "2024-05-01";
     public static final String AZURE_OPENAPI_EXPORT_FORMAT = "openapi-link";
-    public static final String AZURE_VERSION_SET_ID_PREFIX = "WSO2APIVersionSet-";
 
     public static final String API_CONTEXT_VERSION_PLACEHOLDER = "{version}";
 
