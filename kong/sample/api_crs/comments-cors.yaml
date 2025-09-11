@@ -1,0 +1,24 @@
+apiVersion: configuration.konghq.com/v1
+config:
+  credentials: false
+  headers:
+  - authorization
+  - Access-Control-Allow-Origin
+  - Content-Type
+  - SOAPAction
+  - apikey
+  - Internal-Key
+  methods:
+  - GET
+  - PUT
+  - POST
+  - DELETE
+  - PATCH
+  - OPTIONS
+  origins:
+  - '*'
+kind: KongPlugin
+metadata:
+  name: cors-comments-api-plugin
+  namespace: kong
+plugin: cors
