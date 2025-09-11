@@ -52,11 +52,12 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.azure.gw.client.AzureConstants;
 import org.wso2.azure.gw.client.model.ExportEnvelope;
-import org.wso2.azure.gw.client.policy.AzureCORSPolicy;
-import org.wso2.azure.gw.client.policy.AzureJWTPolicy;
 import org.wso2.azure.gw.client.policy.AzurePolicyBuilder;
 import org.wso2.azure.gw.client.policy.AzurePolicyBuilderFactory;
-import org.wso2.azure.gw.client.policy.AzureSetHeaderPolicy;
+import org.wso2.azure.gw.client.policy.policies.AzureCORSPolicy;
+import org.wso2.azure.gw.client.policy.policies.AzureJWTPolicy;
+import org.wso2.azure.gw.client.policy.policies.AzureRateLimitPolicy;
+import org.wso2.azure.gw.client.policy.policies.AzureSetHeaderPolicy;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.APIIdentifier;
@@ -269,6 +270,40 @@ public class AzureAPIUtil {
                     .get(AzureConstants.AZURE_SET_HEADER_POLICY_EXISTS_ACTION).toString();
             policyBuilder.addPolicy(new AzureSetHeaderPolicy(headerName, headerValue,
                     existsAction), policy.getDirection());
+        } else if (policy.getPolicyName().equals(AzureConstants.AZURE_RATE_LIMIT_POLICY_NAME)) {
+            String calls = policy.getParameters().get(AzureConstants.AZURE_RATE_LIMIT_POLICY_CALLS).toString();
+            String renewalPeriod = policy.getParameters().get(AzureConstants.AZURE_RATE_LIMIT_POLICY_RENEWAL_PERIOD)
+                    .toString();
+
+            Object retryAfterHeaderNameObject = policy.getParameters()
+                    .get(AzureConstants.AZURE_RATE_LIMIT_POLICY_RETRY_AFTER_HEADER_NAME);
+            String retryAfterHeaderName =
+                    retryAfterHeaderNameObject != null ? retryAfterHeaderNameObject.toString() : null;
+
+            Object retryAfterVariableNameObject = policy.getParameters()
+                    .get(AzureConstants.AZURE_RATE_LIMIT_POLICY_RETRY_AFTER_VARIABLE_NAME);
+            String retryAfterVariableName =
+                    retryAfterVariableNameObject != null ? retryAfterVariableNameObject.toString() : null;
+
+            Object remainingCallsHeaderNameObject = policy.getParameters()
+                    .get(AzureConstants.AZURE_RATE_LIMIT_POLICY_REMAINING_CALLS_HEADER_NAME);
+            String remainingCallsHeaderName =
+                    remainingCallsHeaderNameObject != null ? remainingCallsHeaderNameObject.toString() : null;
+
+            Object remainingCallsVariableNameObject = policy.getParameters()
+                    .get(AzureConstants.AZURE_RATE_LIMIT_POLICY_REMAINING_CALLS_VARIABLE_NAME);
+            String remainingCallsVariableName =
+                    remainingCallsVariableNameObject != null ? remainingCallsVariableNameObject.toString() : null;
+
+            Object totalCallsHeaderNameObject = policy.getParameters()
+                    .get(AzureConstants.AZURE_RATE_LIMIT_POLICY_TOTAL_CALLS_HEADER_NAME);
+            String totalCallsHeaderName =
+                    totalCallsHeaderNameObject != null ? totalCallsHeaderNameObject.toString() : null;
+            policyBuilder.addPolicy(new AzureRateLimitPolicy(calls, renewalPeriod, retryAfterHeaderName,
+                    retryAfterVariableName, remainingCallsHeaderName, remainingCallsVariableName, totalCallsHeaderName),
+                    policy.getDirection());
+        } else {
+            throw new APIManagementException("Unsupported Azure policy: " + policy.getPolicyName());
         }
     }
 

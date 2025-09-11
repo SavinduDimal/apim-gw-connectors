@@ -57,6 +57,15 @@ public class AzureConstants {
     public static final String AZURE_SET_HEADER_POLICY_HEADER_VALUE = "headerValue";
     public static final String AZURE_SET_HEADER_POLICY_EXISTS_ACTION = "existsAction";
 
+    public static final String AZURE_RATE_LIMIT_POLICY_NAME = "azureRateLimit";
+    public static final String AZURE_RATE_LIMIT_POLICY_CALLS = "calls";
+    public static final String AZURE_RATE_LIMIT_POLICY_RENEWAL_PERIOD = "renewalPeriod";
+    public static final String AZURE_RATE_LIMIT_POLICY_RETRY_AFTER_HEADER_NAME = "retryAfterHeaderName";
+    public static final String AZURE_RATE_LIMIT_POLICY_RETRY_AFTER_VARIABLE_NAME = "retryAfterVariableName";
+    public static final String AZURE_RATE_LIMIT_POLICY_REMAINING_CALLS_HEADER_NAME = "remainingCallsHeaderName";
+    public static final String AZURE_RATE_LIMIT_POLICY_REMAINING_CALLS_VARIABLE_NAME = "remainingCallsVariableName";
+    public static final String AZURE_RATE_LIMIT_POLICY_TOTAL_CALLS_HEADER_NAME = "totalCallsHeaderName";
+
     public static final String POLICY_DIRECTION_REQUEST = "request";
     public static final String POLICY_DIRECTION_RESPONSE = "response";
     public static final String POLICY_DIRECTION_FAULT = "fault";
@@ -70,6 +79,7 @@ public class AzureConstants {
     public static final String AZURE_JWT_POLICY_FILENAME = "policies/jwt.xml";
     public static final String AZURE_BASE_POLICY_FILENAME = "policies/base.xml";
     public static final String AZURE_SET_HEADER_POLICY_FILENAME = "policies/set-header.xml";
+    public static final String AZURE_RATE_LIMIT_POLICY_FILENAME = "policies/rate-limit.xml";
 
     // Environment related constants
     public static final String AZURE_ENVIRONMENT_TENANT_ID = "tenant_id";

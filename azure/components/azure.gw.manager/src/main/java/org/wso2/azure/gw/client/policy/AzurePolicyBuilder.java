@@ -21,6 +21,8 @@ package org.wso2.azure.gw.client.policy;
 import org.w3c.dom.Element;
 import org.w3c.dom.Node;
 import org.wso2.azure.gw.client.AzureConstants;
+import org.wso2.azure.gw.client.policy.policies.AzureCORSPolicy;
+import org.wso2.azure.gw.client.policy.policies.AzurePolicy;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import java.io.StringWriter;
 import java.util.ArrayList;
@@ -79,14 +81,14 @@ public class AzurePolicyBuilder {
         // CORS policies should be added first
         for (AzurePolicy policy : inboundPolicies) {
             if (policy instanceof AzureCORSPolicy) {
-                Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
+                Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.getRoot(), true);
                 inbound.appendChild(imported);
             }
         }
 
         for (AzurePolicy policy : inboundPolicies) {
             if (!(policy instanceof AzureCORSPolicy)) {
-                Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
+                Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.getRoot(), true);
                 inbound.appendChild(imported);
             }
         }
@@ -98,7 +100,7 @@ public class AzurePolicyBuilder {
         }
 
         for (AzurePolicy policy : outboundPolicies) {
-            Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
+            Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.getRoot(), true);
             outbound.appendChild(imported);
         }
 
@@ -109,7 +111,7 @@ public class AzurePolicyBuilder {
         }
 
         for (AzurePolicy policy : onErrorPolicies) {
-            Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.root, true);
+            Node imported = basePolicyRoot.getOwnerDocument().importNode(policy.getRoot(), true);
             onError.appendChild(imported);
         }
 
