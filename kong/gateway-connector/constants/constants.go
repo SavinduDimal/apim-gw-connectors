@@ -410,6 +410,16 @@ const (
 	EqualString         = "="
 )
 
+// Hash field keys for route and service normalization
+const (
+	SpecHashField            = "spec"
+	PluginsHashField         = "konghq_plugins"
+	EnvironmentHashField     = "environment_label"
+	LoadBalancerStatusField  = "loadbalancer_status"
+	RelevantLabelsField      = "relevant_labels"
+	RelevantAnnotationsField = "relevant_annotations"
+)
+
 const (
 	KeyManagerNameRegex = `[^a-z0-9]+`
 )

@@ -19,9 +19,11 @@ package discovery
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"maps"
+	"sort"
 	"strings"
 	"time"
 
@@ -48,10 +50,14 @@ func handleAddHttpRouteResource(route *unstructured.Unstructured) {
 }
 
 // handleUpdateHttpRouteResource handles the update of an HTTPRoute
-func handleUpdateHttpRouteResource(_, route *unstructured.Unstructured) {
+func handleUpdateHttpRouteResource(oldroute, route *unstructured.Unstructured) {
 	loggers.LoggerWatcher.Infof("Processing HTTPRoute modification: %s/%s (Generation: %d, ResourceVersion: %s)",
 		route.GetNamespace(), route.GetName(), route.GetGeneration(), route.GetResourceVersion())
-
+	if generateRouteHash(oldroute) == generateRouteHash(route) {
+		loggers.LoggerWatcher.Debugf("HTTPRoute %s/%s hash unchanged - skipping reconciliation",
+			route.GetNamespace(), route.GetName())
+		return
+	}
 	serviceNames := getHTTPRouteReferencedServices(route)
 	for _, serviceName := range serviceNames {
 		ReconcileAPI(route.GetNamespace(), serviceName)
@@ -410,4 +416,141 @@ func updateResourceLabels(resource *unstructured.Unstructured, gvr schema.GroupV
 	}
 	loggers.LoggerWatcher.Errorf("Failed to update %s %s/%s after %d retry attempts due to resource version conflicts",
 		resourceType, resource.GetNamespace(), resource.GetName(), constants.MaxRetries)
+}
+
+// generateRouteHash generates an order-independent hash of the HTTPRoute's relevant fields to detect meaningful changes
+func generateRouteHash(route *unstructured.Unstructured) string {
+	if route == nil {
+		return constants.EmptyString
+	}
+
+	normalizedSpec := normalizeHTTPRouteSpec(route.Object[constants.SpecField])
+
+	relevantFields := map[string]interface{}{
+		constants.SpecHashField: normalizedSpec,
+	}
+
+	if annotations := route.GetAnnotations(); annotations != nil {
+		if pluginsAnnotation, exists := annotations[constants.KongPluginsAnnotation]; exists {
+			pluginList := strings.Split(pluginsAnnotation, constants.CommaString)
+			var sortedPlugins []string
+			for _, plugin := range pluginList {
+				plugin = strings.TrimSpace(plugin)
+				if plugin != constants.EmptyString {
+					sortedPlugins = append(sortedPlugins, plugin)
+				}
+			}
+			sort.Strings(sortedPlugins)
+			relevantFields[constants.PluginsHashField] = sortedPlugins
+		}
+	}
+
+	if labels := route.GetLabels(); labels != nil {
+		if envLabel, exists := labels[constants.EnvironmentLabel]; exists {
+			relevantFields[constants.EnvironmentHashField] = envLabel
+		}
+	}
+
+	data, err := json.Marshal(relevantFields)
+	if err != nil {
+		loggers.LoggerWatcher.Errorf("Failed to marshal route data for hashing: %v", err)
+		return constants.EmptyString
+	}
+
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%x", hash)
+}
+
+// normalizeHTTPRouteSpec normalizes the HTTPRoute spec to handle ordering of slices
+func normalizeHTTPRouteSpec(spec interface{}) interface{} {
+	if spec == nil {
+		return nil
+	}
+
+	specMap, ok := spec.(map[string]interface{})
+	if !ok {
+		return spec
+	}
+
+	normalized := make(map[string]interface{})
+	for key, value := range specMap {
+		switch key {
+		case constants.HostnamesField:
+			if hostnames, ok := value.([]interface{}); ok {
+				sortedHostnames := make([]string, 0, len(hostnames))
+				for _, h := range hostnames {
+					if hostname, ok := h.(string); ok {
+						sortedHostnames = append(sortedHostnames, hostname)
+					}
+				}
+				sort.Strings(sortedHostnames)
+				normalized[key] = sortedHostnames
+			} else {
+				normalized[key] = value
+			}
+		case constants.RulesField:
+			if rules, ok := value.([]interface{}); ok {
+				normalizedRules := make([]interface{}, len(rules))
+				for i, rule := range rules {
+					normalizedRules[i] = normalizeHTTPRouteRule(rule)
+				}
+				sort.Slice(normalizedRules, func(i, j int) bool {
+					iData, _ := json.Marshal(normalizedRules[i])
+					jData, _ := json.Marshal(normalizedRules[j])
+					return string(iData) < string(jData)
+				})
+				normalized[key] = normalizedRules
+			} else {
+				normalized[key] = value
+			}
+		default:
+			continue
+		}
+	}
+
+	return normalized
+}
+
+// normalizeHTTPRouteRule normalizes individual HTTPRoute rules for consistent hashing
+func normalizeHTTPRouteRule(rule interface{}) interface{} {
+	if rule == nil {
+		return nil
+	}
+
+	ruleMap, ok := rule.(map[string]interface{})
+	if !ok {
+		return rule
+	}
+
+	normalized := make(map[string]interface{})
+	for key, value := range ruleMap {
+		switch key {
+		case constants.MatchesField:
+			if matches, ok := value.([]interface{}); ok {
+				sort.Slice(matches, func(i, j int) bool {
+					iData, _ := json.Marshal(matches[i])
+					jData, _ := json.Marshal(matches[j])
+					return string(iData) < string(jData)
+				})
+				normalized[key] = matches
+			} else {
+				normalized[key] = value
+			}
+		case constants.BackendRefsField:
+			if backendRefs, ok := value.([]interface{}); ok {
+				sort.Slice(backendRefs, func(i, j int) bool {
+					iData, _ := json.Marshal(backendRefs[i])
+					jData, _ := json.Marshal(backendRefs[j])
+					return string(iData) < string(jData)
+				})
+				normalized[key] = backendRefs
+			} else {
+				normalized[key] = value
+			}
+		default:
+			continue
+		}
+	}
+
+	return normalized
 }
