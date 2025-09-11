@@ -117,7 +117,7 @@ func handleUpdateKongPluginResource(oldKongPlugin, kongPlugin *unstructured.Unst
 	case constants.JWTPlugin:
 		handleJWTPluginUpdate(kongPlugin, uniqueAPIs, kongPluginName)
 	case constants.ACLPlugin:
-		handleACLPluginUpdate(oldKongPlugin, kongPlugin, uniqueAPIs, kongPluginName)
+		handleACLPluginUpdate(oldKongPlugin, kongPlugin, kongPluginName)
 	}
 }
 
@@ -193,7 +193,7 @@ func handleJWTPluginUpdate(kongPlugin *unstructured.Unstructured, uniqueAPIs map
 }
 
 // handleACLPluginUpdate handles ACL plugin updates
-func handleACLPluginUpdate(oldKongPlugin, kongPlugin *unstructured.Unstructured, uniqueAPIs map[string]managementserver.API, kongPluginName string) {
+func handleACLPluginUpdate(oldKongPlugin, kongPlugin *unstructured.Unstructured, kongPluginName string) {
 	loggers.LoggerWatcher.Debugf("Processing ACL plugin update for KongPlugin %s", kongPluginName)
 
 	newACLAllowValues, err := ExtractACLAllowValuesFromPlugin(kongPlugin)
