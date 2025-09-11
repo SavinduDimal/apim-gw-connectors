@@ -325,6 +325,11 @@ func undeployHTTPRoutes(apiID string, k8sClient client.Client, conf *config.Conf
 		loggers.LoggerK8sClient.Errorf("Unable to list HTTPRoute CRs: %v", err)
 	} else {
 		for _, resource := range resourceList.Items {
+			if origin, exists := resource.GetLabels()[constants.K8sInitiatedFromField]; !exists {
+				continue
+			} else if origin == constants.DataPlaneOrigin {
+				continue
+			}
 			err := k8sClient.Delete(context.Background(), &resource, &client.DeleteOptions{})
 			if err != nil {
 				loggers.LoggerK8sClient.Errorf("Unable to delete HTTPRoute CR: %v", err)
@@ -347,6 +352,11 @@ func undeployServices(apiID string, k8sClient client.Client, conf *config.Config
 		loggers.LoggerK8sClient.Errorf("Unable to list Service CRs: %v", err)
 	} else {
 		for _, resource := range resourceList.Items {
+			if origin, exists := resource.GetLabels()[constants.K8sInitiatedFromField]; !exists {
+				continue
+			} else if origin == constants.DataPlaneOrigin {
+				continue
+			}
 			err := k8sClient.Delete(context.Background(), &resource, &client.DeleteOptions{})
 			if err != nil {
 				loggers.LoggerK8sClient.Errorf("Unable to delete Service CR: %v", err)
@@ -369,6 +379,11 @@ func undeployKongPlugins(k8sClient client.Client, conf *config.Config, labelSele
 		loggers.LoggerK8sClient.Errorf("Unable to list KongPlugin CRs: %v", err)
 	} else {
 		for _, resource := range resourceList.Items {
+			if origin, exists := resource.GetLabels()[constants.K8sInitiatedFromField]; !exists {
+				continue
+			} else if origin == constants.DataPlaneOrigin {
+				continue
+			}
 			err := k8sClient.Delete(context.Background(), &resource, &client.DeleteOptions{})
 			if err != nil {
 				loggers.LoggerK8sClient.Errorf("Unable to delete KongPlugin CR: %v", err)

@@ -2,7 +2,7 @@ apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   annotations:
-    konghq.com/plugins: jwt-comments-api-plugin,acl-comments-api-plugin
+    konghq.com/plugins: jwt-comments-api-plugin,acl-comments-api-plugin,cors-comments-api-plugin
     konghq.com/strip-path: "true"
   name: comments-api-route
   namespace: kong

@@ -25,6 +25,7 @@ var (
 	GVRs = []schema.GroupVersionResource{
 		HTTPRouteGVR,
 		ServiceGVR,
+		KongPluginGVR,
 	}
 
 	// HTTPRouteGVR defines the HTTPRoute GroupVersionResource
@@ -53,6 +54,13 @@ var (
 		Group:    "configuration.konghq.com",
 		Version:  "v1",
 		Resource: "kongplugins",
+	}
+
+	// SecretGVR defines the Secret GroupVersionResource
+	SecretGVR = schema.GroupVersionResource{
+		Group:    "",
+		Version:  "v1",
+		Resource: "secrets",
 	}
 )
 
@@ -136,6 +144,7 @@ const (
 	PluginField      = "plugin"
 	GroupField       = "group"
 	AllowField       = "allow"
+	DataField        = "data"
 )
 
 // Label keys used throughout the Kong Gateway Connector
@@ -298,6 +307,27 @@ const (
 	DefaultCORSCredentials = false
 )
 
+// Default CORS Configuration Arrays
+var (
+	DefaultCORSOrigins = []string{"*"}
+	DefaultCORSHeaders = []string{
+		"authorization",
+		"Access-Control-Allow-Origin",
+		"Content-Type",
+		"SOAPAction",
+		"apikey",
+		"Internal-Key",
+	}
+	DefaultCORSMethods = []string{
+		"GET",
+		"PUT",
+		"POST",
+		"DELETE",
+		"PATCH",
+		"OPTIONS",
+	}
+)
+
 // JWT Algorithm and Secret Keys
 const (
 	RS256Algorithm    = "RS256"
@@ -366,6 +396,7 @@ const (
 // Origin Values
 const (
 	ControlPlaneOrigin = "CP"
+	DataPlaneOrigin    = "DP"
 )
 
 // EmptyString represents an empty string constant for consistent usage

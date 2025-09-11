@@ -30,31 +30,31 @@ type KongAPIImportCallback struct{}
 
 // OnAPIImportSuccess is called when an API has been successfully imported to the control plane.
 // It updates the Service and HTTPRoute CRs with the apiID label for Kong discovery mode.
-func (k *KongAPIImportCallback) OnAPIImportSuccess(apiUUID, apiID, revisionID, crName, crNamespace, agentName string) {
-	loggers.LoggerWatcher.Infof("%s API import callback triggered - apiUUID: %s, apiID: %s, revisionID: %s, CR: %s/%s",
-		agentName, apiUUID, apiID, revisionID, crNamespace, crName)
+func (k *KongAPIImportCallback) OnAPIImportSuccess(kongAPIUUID, apiID, revisionID, crName, crNamespace, agentName string) {
+	loggers.LoggerWatcher.Infof("%s API import callback triggered - kongAPIUUID: %s, apiID: %s, revisionID: %s, CR: %s/%s",
+		agentName, kongAPIUUID, apiID, revisionID, crNamespace, crName)
 
 	// Find and update the Service CR with the API ID label
-	if err := k.updateServiceCR(apiUUID, apiID, revisionID, crNamespace); err != nil {
-		loggers.LoggerWatcher.Errorf("Failed to update Service with apiID for API %s: %v", apiUUID, err)
+	if err := k.updateServiceCR(kongAPIUUID, apiID, revisionID, crNamespace); err != nil {
+		loggers.LoggerWatcher.Errorf("Failed to update Service with apiID for API %s: %v", kongAPIUUID, err)
 	}
 
 	// Find and update all related HTTPRoute CRs with the API ID label
-	if err := k.updateHTTPRouteCR(apiUUID, apiID, revisionID, crNamespace); err != nil {
-		loggers.LoggerWatcher.Errorf("Failed to update HTTPRoutes with apiID for API %s: %v", apiUUID, err)
+	if err := k.updateHTTPRouteCR(kongAPIUUID, apiID, revisionID, crNamespace); err != nil {
+		loggers.LoggerWatcher.Errorf("Failed to update HTTPRoutes with apiID for API %s: %v", kongAPIUUID, err)
 	}
 
-	api, ok := discoverPkg.APIMap[apiUUID]
+	api, ok := discoverPkg.APIMap[kongAPIUUID]
 	if !ok {
-		loggers.LoggerWatcher.Errorf("API not found in APIMap: %s", apiUUID)
+		loggers.LoggerWatcher.Errorf("API not found in APIMap: %s", kongAPIUUID)
 		return
 	}
 
 	api.APIUUID = apiID
 	api.RevisionID = revisionID
-	discoverPkg.APIMap[apiUUID] = api
+	discoverPkg.APIMap[kongAPIUUID] = api
 
-	loggers.LoggerWatcher.Infof("Successfully updated API in APIMap - originalKey: %s, newAPIUUID: %s", apiUUID, apiID)
+	loggers.LoggerWatcher.Infof("Successfully updated API in APIMap - originalKey: %s, newAPIUUID: %s", kongAPIUUID, apiID)
 }
 
 // updateServiceCR finds the Service CR by kongAPIUUID label and updates it with the apiID label

@@ -67,6 +67,9 @@ func updateResource(oldU, newU *unstructured.Unstructured) {
 	if newU.GetKind() == constants.HTTPRouteKind && !IsControlPlaneInitiated(newU) {
 		handleUpdateHttpRouteResource(oldU, newU)
 	}
+	if newU.GetKind() == constants.KongPluginKind && !IsControlPlaneInitiated(newU) {
+		handleUpdateKongPluginResource(oldU, newU)
+	}
 }
 
 // deleteResource handles the deletion of a resource

@@ -53,6 +53,7 @@ type APICPEvent struct {
 	Name      string    `json:"name"`
 	Namespace string    `json:"namespace"`
 	AgentName string    `json:"agentName"`
+	UUID      string    `json:"uuid"`
 }
 
 // EventType is the type of api event. One of (CREATE, UPDATE, DELETE)

@@ -206,7 +206,7 @@ func sendData() {
 
 				if event.AgentName == constants.DefaultKongAgentName && id != "" {
 					if callback := managementserver.GetAPIImportCallback(); callback != nil && id != "" {
-						callback.OnAPIImportSuccess(event.API.APIUUID, id, revisionID, event.Name, event.Namespace, event.AgentName)
+						callback.OnAPIImportSuccess(event.UUID, id, revisionID, event.Name, event.Namespace, event.AgentName)
 					}
 				}
 			}
@@ -216,13 +216,14 @@ func sendData() {
 }
 
 // QueueEvent adds an event to the event queue
-func QueueEvent(eventType managementserver.EventType, api managementserver.API, crName string, crNamespace string, agentName string) {
+func QueueEvent(eventType managementserver.EventType, api managementserver.API, crName string, crNamespace string, agentName string, UUID string) {
 	event := managementserver.APICPEvent{
 		Event:     eventType,
 		API:       api,
 		Name:      crName,
 		Namespace: crNamespace,
 		AgentName: agentName,
+		UUID:      UUID,
 	}
 	select {
 	case eventQueue <- event:
