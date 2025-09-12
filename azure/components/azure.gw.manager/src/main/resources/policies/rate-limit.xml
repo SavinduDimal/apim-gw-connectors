@@ -1,0 +1,1 @@
+<rate-limit calls="${calls}" renewal-period="${renewal period}" />
