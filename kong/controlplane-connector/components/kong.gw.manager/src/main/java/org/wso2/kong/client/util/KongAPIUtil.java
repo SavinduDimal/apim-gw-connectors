@@ -605,37 +605,9 @@ public class KongAPIUtil {
     }
 
     private static String toRegex(String path) {
-        if (path == null || path.isEmpty()) {
-            return "~^/$";
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("~^");
-        boolean inParam = false;
-        for (int i = 0; i < path.length(); i++) {
-            char c = path.charAt(i);
-            if (c == '{') {
-                inParam = true;
-                // detect greedy "{name+}"
-                int end = path.indexOf('}', i + 1);
-                if (end < 0) {
-                    // treat "{" as a literal
-                    sb.append("\\{");
-                } else {
-                    boolean greedy = end > i + 1 && path.charAt(end - 1) == '+';
-                    sb.append(greedy ? "(.+)" : "([^/]+)");
-                    i = end; // jump to '}'
-                }
-                inParam = false;
-            } else {
-                // escape regex metacharacters
-                if ("\\.[]{}()*+-?^$|".indexOf(c) >= 0) {
-                    sb.append('\\');
-                }
-                sb.append(c);
-            }
-        }
-        sb.append("$");
-        return sb.toString();
+        String regex = path.replaceAll("\\{[^/]+\\}", "([^/]+)")   // normal params
+                .replaceAll("\\{[^/]+\\+\\}", "(.+)");  // greedy params
+        return "~" + regex + "$";
     }
 
     /**
