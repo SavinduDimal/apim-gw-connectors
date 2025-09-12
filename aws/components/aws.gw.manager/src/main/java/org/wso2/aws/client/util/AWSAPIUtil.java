@@ -18,7 +18,10 @@
 
 package org.wso2.aws.client.util;
 
+import com.google.gson.Gson;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 
@@ -84,9 +87,7 @@ import static org.wso2.aws.client.AWSConstants.JSON_PAYLOAD_TYPE;
 import static org.wso2.aws.client.AWSConstants.OPEN_API_VERSION;
 import static org.wso2.aws.client.AWSConstants.PRODUCTION_ENDPOINTS;
 import static org.wso2.aws.client.AWSConstants.SANDBOX_ENDPOINTS;
-import static org.wso2.aws.client.AWSConstants.TEMPLATE_NOT_SUPPORTED_PROP;
 import static org.wso2.aws.client.AWSConstants.URL_PROP;
-import static org.wso2.aws.client.AWSConstants.YAML_PAYLOAD_TYPE;
 
 /**
  * This class contains utility methods to interact with AWS API Gateway
@@ -557,7 +558,7 @@ public class AWSAPIUtil {
                 .restApiId(apiId)
                 .stageName(stage) // Assuming a default stage or make it configurable
                 .exportType(OPEN_API_VERSION) // Or "oas30" for OpenAPI 3.0
-                .accepts(YAML_PAYLOAD_TYPE)
+                .accepts(JSON_PAYLOAD_TYPE)
                 .build();
         GetExportResponse getExportResponse = client.getExport(getExportRequest);
         return getExportResponse.body().asUtf8String();
@@ -606,6 +607,7 @@ public class AWSAPIUtil {
         api.setCreatedTime(Long.toString(restApi.createdDate().toEpochMilli()));
         api.setInitiatedFromGateway(true);
         api.setGatewayVendor("external");
+        api.setEnableSubscriberVerification(false);
         api.setGatewayType(environment.getGatewayType());
         return api;
     }
@@ -654,5 +656,20 @@ public class AWSAPIUtil {
         } else {
             return null;
         }
+    }
+
+    /**
+     * Creates a reference artifact by combining a given RestApi object and its Swagger definition in JSON format.
+     *
+     * @param restApi The RestApi object containing API details.
+     * @param swaggerDefinitionJson The Swagger/OpenAPI definition of the API in JSON format.
+     * @return A JSON string that represents the combined reference artifact.
+     */
+    public static String createReferenceArtifact(RestApi restApi, String swaggerDefinitionJson) {
+        Gson G = new Gson();
+        JsonArray arr = new JsonArray();
+        arr.add(G.toJsonTree(restApi));
+        arr.add(JsonParser.parseString(swaggerDefinitionJson));
+        return G.toJson(arr);
     }
 }

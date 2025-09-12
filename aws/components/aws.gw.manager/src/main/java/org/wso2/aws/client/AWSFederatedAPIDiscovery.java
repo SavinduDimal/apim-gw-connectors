@@ -25,6 +25,7 @@ import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.aws.client.util.AWSAPIUtil;
 import org.wso2.carbon.apimgt.api.APIManagementException;
+import org.wso2.carbon.apimgt.api.DiscoveredAPI;
 import org.wso2.carbon.apimgt.api.FederatedAPIDiscovery;
 import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.Environment;
@@ -44,6 +45,17 @@ import static org.wso2.carbon.apimgt.impl.importexport.ImportExportConstants.DEP
 import static org.wso2.carbon.apimgt.impl.importexport.ImportExportConstants.DEPLOYMENT_VHOST;
 import static org.wso2.carbon.apimgt.impl.importexport.ImportExportConstants.DISPLAY_ON_DEVPORTAL_OPTION;
 
+/**
+ * Represents the federated API discovery implementation for AWS API Gateway.
+ * This class is responsible for discovering REST APIs deployed on AWS API Gateway
+ * and integrating them with the API management system.
+ *
+ * It includes methods for initializing the discovery process, fetching
+ * deployed APIs, and evaluating whether an API has been updated.
+ *
+ * This implementation works in conjunction with AWS API Gateway and uses
+ * AWS SDK for Java for API interactions.
+ */
 public class AWSFederatedAPIDiscovery implements FederatedAPIDiscovery {
 
     private static final Log log = LogFactory.getLog(AWSFederatedAPIDiscovery.class);
@@ -92,9 +104,9 @@ public class AWSFederatedAPIDiscovery implements FederatedAPIDiscovery {
     }
 
     @Override
-    public List<API> discoverAPI() {
+    public List<DiscoveredAPI> discoverAPI() {
         List<RestApi> restApis = AWSAPIUtil.getRestApis(apiGatewayClient);
-        List<API> retrievedAPIs = new ArrayList<>();
+        List<DiscoveredAPI> retrievedAPIs = new ArrayList<>();
         for (RestApi restApi : restApis) {
             String apiStage = AWSAPIUtil.getStageNames(apiGatewayClient, restApi.id());
             if (!Objects.equals(apiStage, stage)) {
@@ -103,8 +115,15 @@ public class AWSFederatedAPIDiscovery implements FederatedAPIDiscovery {
             String apiDefinition = AWSAPIUtil.getRestApiDefinition(apiGatewayClient, restApi.id(), stage);
             API api = AWSAPIUtil.restAPItoAPI(restApi, apiDefinition, organization, environment);
             AWSAPIUtil.setEndpointConfig(api, restApi, apiGatewayClient);
-            retrievedAPIs.add(api);
+            DiscoveredAPI discoveredAPI = new DiscoveredAPI(api,
+                    AWSAPIUtil.createReferenceArtifact(restApi,apiDefinition));
+            retrievedAPIs.add(discoveredAPI);
         }
         return retrievedAPIs;
+    }
+
+    @Override
+    public boolean isAPIUpdated(String existingReferenceArtifact, String newReferenceArtifact) {
+        return !existingReferenceArtifact.equals(newReferenceArtifact);
     }
 }
