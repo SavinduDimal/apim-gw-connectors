@@ -21,6 +21,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"time"
@@ -72,8 +73,8 @@ func ReconcileAPI(namespace, serviceName string) {
 	}
 
 	// At this point, we have a service and at least one route, so we build the API.
-	kongAPIUUID := getOrGenerateKongAPIUUID(service, nil)
-	apiVersion := getAPIVersion(service, nil)
+	kongAPIUUID := getOrGenerateKongAPIUUID(service)
+	apiVersion := getAPIVersion(service)
 
 	desiredAPI := buildAPIFromHTTPRoutesAndService(service, httpRoutes, apiVersion, kongAPIUUID)
 	newHash := computeAPIHash(desiredAPI)
@@ -163,9 +164,14 @@ func handleAddServiceResource(service *unstructured.Unstructured) {
 }
 
 // handleUpdateServiceResource handles the update of an Service
-func handleUpdateServiceResource(_, service *unstructured.Unstructured) {
+func handleUpdateServiceResource(oldService, service *unstructured.Unstructured) {
 	loggers.LoggerWatcher.Infof("Processing Service modification: %s/%s (Generation: %d, ResourceVersion: %s)",
 		service.GetNamespace(), service.GetName(), service.GetGeneration(), service.GetResourceVersion())
+	if generateServiceHash(oldService) == generateServiceHash(service) {
+		loggers.LoggerWatcher.Debugf("Service %s/%s hash unchanged - skipping reconciliation",
+			service.GetNamespace(), service.GetName())
+		return
+	}
 	ReconcileAPI(service.GetNamespace(), service.GetName())
 }
 
@@ -204,7 +210,7 @@ func shouldSkipResource(resource *unstructured.Unstructured) bool {
 }
 
 // getOrGenerateKongAPIUUID gets existing API UUID from service or generates a new one
-func getOrGenerateKongAPIUUID(service, httpRoute *unstructured.Unstructured) string {
+func getOrGenerateKongAPIUUID(service *unstructured.Unstructured) string {
 
 	kongAPIUUID, hasKongAPIUUID := service.GetLabels()[constants.KongAPIUUIDLabel]
 	if !hasKongAPIUUID {
@@ -215,7 +221,7 @@ func getOrGenerateKongAPIUUID(service, httpRoute *unstructured.Unstructured) str
 }
 
 // getAPIVersion gets existing API version from service or sets default
-func getAPIVersion(service, httpRoute *unstructured.Unstructured) string {
+func getAPIVersion(service *unstructured.Unstructured) string {
 
 	apiVersion, hasApiVersion := service.GetLabels()[constants.APIVersionLabel]
 	if !hasApiVersion {
@@ -244,12 +250,7 @@ func updateServiceLabels(u *unstructured.Unstructured, labelsToSet map[string]st
 func updateAPIFromService(api *managementserver.API, service *unstructured.Unstructured) {
 	loggers.LoggerWatcher.Debugf("Updating API from Service|%s/%s\n", service.GetNamespace(), service.GetName())
 
-	apiName, apiNameFound := service.GetLabels()[constants.APINameLabel]
-	if apiNameFound && apiName != constants.EmptyString {
-		api.APIName = apiName
-	} else {
-		api.APIName = service.GetName()
-	}
+	api.APIName = service.GetName()
 
 	if organization, found := service.GetLabels()[constants.OrganizationLabel]; found {
 		api.Organization = organization
@@ -539,6 +540,66 @@ func getHTTPRouteReferencedServices(httpRoute *unstructured.Unstructured) []stri
 
 	loggers.LoggerWatcher.Debugf("HTTPRoute %s/%s references %d services: %v", httpRoute.GetNamespace(), httpRoute.GetName(), len(serviceNames), serviceNames)
 	return serviceNames
+}
+
+// generateServiceHash generates an order-independent hash of the Service's relevant fields to detect meaningful changes
+func generateServiceHash(service *unstructured.Unstructured) string {
+	if service == nil {
+		return constants.EmptyString
+	}
+
+	relevantFields := map[string]interface{}{}
+
+	if spec, found, _ := unstructured.NestedMap(service.Object, constants.SpecField); found {
+		relevantFields[constants.SpecHashField] = spec
+	}
+
+	if status, found, _ := unstructured.NestedMap(service.Object, constants.StatusPath); found {
+		if lbStatus, found, _ := unstructured.NestedMap(status, constants.LoadBalancerPath); found {
+			if ingress, found, _ := unstructured.NestedSlice(lbStatus, constants.LoadBalancerIngress); found && len(ingress) > 0 {
+				relevantFields[constants.LoadBalancerStatusField] = ingress
+			}
+		}
+	}
+
+	if labels := service.GetLabels(); labels != nil {
+		relevantLabels := make(map[string]string)
+
+		labelKeys := []string{
+			constants.OrganizationLabel,
+		}
+
+		for _, key := range labelKeys {
+			if value, exists := labels[key]; exists {
+				relevantLabels[key] = value
+			}
+		}
+
+		if len(relevantLabels) > 0 {
+			relevantFields[constants.RelevantLabelsField] = relevantLabels
+		}
+	}
+
+	if annotations := service.GetAnnotations(); annotations != nil {
+		relevantAnnotations := make(map[string]string)
+
+		if protocol, exists := annotations[constants.KongProtocolAnnotation]; exists {
+			relevantAnnotations[constants.KongProtocolAnnotation] = protocol
+		}
+
+		if len(relevantAnnotations) > 0 {
+			relevantFields[constants.RelevantAnnotationsField] = relevantAnnotations
+		}
+	}
+
+	data, err := json.Marshal(relevantFields)
+	if err != nil {
+		loggers.LoggerWatcher.Errorf("Failed to marshal service data for hashing: %v", err)
+		return constants.EmptyString
+	}
+
+	hash := sha256.Sum256(data)
+	return fmt.Sprintf("%x", hash)
 }
 
 // FetchServiceByName retrieves a specific Service by name from a given namespace
