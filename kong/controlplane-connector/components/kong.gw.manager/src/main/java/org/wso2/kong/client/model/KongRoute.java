@@ -20,6 +20,7 @@ package org.wso2.kong.client.model;
 
 import com.google.gson.annotations.SerializedName;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Represents a Kong Route.
@@ -34,15 +35,24 @@ public class KongRoute {
     private List<String> methods;
     private List<String> protocols;
 
-    @SerializedName("strip_path") private Boolean stripPath;
-    @SerializedName("preserve_host") private Boolean preserveHost;
-    @SerializedName("path_handling") private String pathHandling;
-    @SerializedName("https_redirect_status_code") private Integer httpsRedirectStatusCode;
-    @SerializedName("regex_priority") private Integer regexPriority;
-    @SerializedName("request_buffering") private Boolean requestBuffering;
-    @SerializedName("response_buffering") private Boolean responseBuffering;
-    @SerializedName("created_at") private Long createdAt;
-    @SerializedName("updated_at") private Long updatedAt;
+    @SerializedName("strip_path")
+    private Boolean stripPath;
+    @SerializedName("preserve_host")
+    private Boolean preserveHost;
+    @SerializedName("path_handling")
+    private String pathHandling;
+    @SerializedName("https_redirect_status_code")
+    private Integer httpsRedirectStatusCode;
+    @SerializedName("regex_priority")
+    private Integer regexPriority;
+    @SerializedName("request_buffering")
+    private Boolean requestBuffering;
+    @SerializedName("response_buffering")
+    private Boolean responseBuffering;
+    @SerializedName("created_at")
+    private Long createdAt;
+    @SerializedName("updated_at")
+    private Long updatedAt;
 
     private ServiceRef service;
 
@@ -52,10 +62,16 @@ public class KongRoute {
      */
     public static class ServiceRef {
         private String id;
+
         public String getId() {
             return id;
         }
+
         public void setId(String id) {
+            this.id = id;
+        }
+
+        public ServiceRef(String id) {
             this.id = id;
         }
     }
@@ -188,5 +204,18 @@ public class KongRoute {
         this.service = service;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (!(o instanceof KongRoute)) {
+            return false;
+        }
+        KongRoute kongRoute = (KongRoute) o;
+        return Objects.equals(getName(), kongRoute.getName());
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hashCode(getName());
+    }
 }
 

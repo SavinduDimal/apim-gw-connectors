@@ -38,82 +38,103 @@ import org.wso2.kong.client.model.PagedResponse;
  */
 public interface KongKonnectApi {
 
-  // List APIs
-  @RequestLine("GET /v3/apis?size={size}")
-  @Headers({"Accept: application/json"})
-  KongListResponse<KongAPI> listAPIs(@Param("size") int size);
+    // List APIs
+    @RequestLine("GET /v3/apis?size={size}")
+    @Headers({"Accept: application/json"})
+    KongListResponse<KongAPI> listAPIs(@Param("size") int size) throws KongGatewayException;
 
-  // Get one API spec by API ID + Spec ID
-  @RequestLine("GET /v3/apis/{apiId}/specifications/{specId}")
-  @Headers({"Accept: application/json"})
-  KongAPISpec getAPISpec(@Param("apiId") String apiId, @Param("specId") String specId);
+    // Get one API spec by API ID + Spec ID
+    @RequestLine("GET /v3/apis/{apiId}/specifications/{specId}")
+    @Headers({"Accept: application/json"})
+    KongAPISpec getAPISpec(@Param("apiId") String apiId, @Param("specId") String specId) throws KongGatewayException;
 
-  // List API implementations (api_id -> service mapping)
-  @RequestLine("GET /v3/api-implementations?size={size}")
-  @Headers({"Accept: application/json"})
-  KongListResponse<KongAPIImplementation> listAPIImplementations(@Param("size") int size);
+    // List API implementations (api_id -> service mapping)
+    @RequestLine("GET /v3/api-implementations?size={size}")
+    @Headers({"Accept: application/json"})
+    KongListResponse<KongAPIImplementation> listAPIImplementations(@Param("size") int size) throws KongGatewayException;
 
-  // Services
+    // Services
 
-  // Fetch a single service from a given control plane
-  @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}")
-  @Headers({"Accept: application/json"})
-  KongService getService(@Param("cpId") String controlPlaneId, @Param("serviceId") String serviceId);
+    // Fetch a single service from a given control plane
+    @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}")
+    @Headers({"Accept: application/json"})
+    KongService getService(@Param("cpId") String controlPlaneId, @Param("serviceId") String serviceId)
+            throws KongGatewayException;
 
-  @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services?size={size}")
-  @Headers({"Accept: application/json"})
-  PagedResponse<KongService> listServices(@Param("cpId") String controlPlaneId, @Param("size") int size);
+    @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services?size={size}")
+    @Headers({"Accept: application/json"})
+    PagedResponse<KongService> listServices(@Param("cpId") String controlPlaneId, @Param("size") int size)
+            throws KongGatewayException;
 
-  @RequestLine("POST /v2/control-planes/{cpId}/core-entities/services")
-  @Headers({"Accept: application/json", "Content-Type: application/json"})
-  KongService createService(@Param("cpId") String controlPlaneId, KongService body);
+    @RequestLine("POST /v2/control-planes/{cpId}/core-entities/services")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongService createService(@Param("cpId") String controlPlaneId, KongService body) throws KongGatewayException;
 
-  // GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}/routes?size={size}
-  @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}/routes?size={size}")
-  @Headers({"Accept: application/json"})
-  PagedResponse<KongRoute> listRoutesByServiceId(@Param("cpId") String controlPlaneId,
-                                                 @Param("serviceId") String serviceId,
-                                                 @Param("size") int size);
+    @RequestLine("PUT /v2/control-planes/{cpId}/core-entities/services/{serviceId}")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongService upsertService(@Param("cpId") String controlPlaneId, @Param("serviceId") String serviceId,
+                              KongService body) throws KongGatewayException;
 
-  // (Optional) create a route under a specific service
-  @RequestLine("POST /v2/control-planes/{cpId}/core-entities/services/{serviceId}/routes")
-  @Headers({"Accept: application/json", "Content-Type: application/json"})
-  KongRoute createRouteForService(@Param("cpId") String controlPlaneId,
-                                  @Param("serviceId") String serviceId,
-                                  KongRoute body);
 
-  // List plugins bound to a specific service
-  @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}/plugins?size={size}")
-  @Headers({"Accept: application/json"})
-  PagedResponse<KongPlugin> listPluginsByServiceId(@Param("cpId") String controlPlaneId,
-                                                   @Param("serviceId") String serviceId,
-                                                   @Param("size") int size);
+    // GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}/routes?size={size}
+    @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}/routes?size={size}")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    PagedResponse<KongRoute> listRoutesByServiceId(@Param("cpId") String controlPlaneId,
+                                                   @Param("serviceId") String serviceId, @Param("size") int size)
+            throws KongGatewayException;
 
-  // (Optional) create a plugin on a service
-  @RequestLine("POST /v2/control-planes/{cpId}/core-entities/services/{serviceId}/plugins")
-  @Headers({"Accept: application/json", "Content-Type: application/json"})
-  KongPlugin createPluginForService(@Param("cpId") String controlPlaneId,
-                                    @Param("serviceId") String serviceId,
-                                    KongPlugin body);
+    // (Optional) create a route under a specific service
+    @RequestLine("POST /v2/control-planes/{cpId}/core-entities/services/{serviceId}/routes")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongRoute createRouteForService(@Param("cpId") String controlPlaneId, @Param("serviceId") String serviceId,
+                                    KongRoute body) throws KongGatewayException;
 
-  // (Optional) update/delete by plugin id
-  @RequestLine("PATCH /v2/control-planes/{cpId}/core-entities/plugins/{pluginId}")
-  @Headers({"Accept: application/json", "Content-Type: application/json"})
-  KongPlugin patchPlugin(@Param("cpId") String controlPlaneId,
-                         @Param("pluginId") String pluginId,
-                         KongPlugin body);
+    // Retrieve a Service by ID
+    @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongService retrieveService(@Param("cpId") String controlPlaneId, @Param("serviceId") String serviceId)
+            throws KongGatewayException;
 
-  @RequestLine("DELETE /v2/control-planes/{cpId}/core-entities/plugins/{pluginId}")
-  @Headers({"Accept: application/json"})
-  void deletePlugin(@Param("cpId") String controlPlaneId,
-                    @Param("pluginId") String pluginId);
+    // List plugins bound to a specific service
+    @RequestLine("GET /v2/control-planes/{cpId}/core-entities/services/{serviceId}/plugins?size={size}")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    PagedResponse<KongPlugin> listPluginsByServiceId(@Param("cpId") String controlPlaneId,
+                                                     @Param("serviceId") String serviceId, @Param("size") int size)
+            throws KongGatewayException;
 
-  // Routes
-  @RequestLine("GET /v2/control-planes/{cpId}/core-entities/routes?size={size}")
-  @Headers({"Accept: application/json"})
-  PagedResponse<KongRoute> listRoutes(@Param("cpId") String controlPlaneId, @Param("size") int size);
+    // (Optional) create a plugin on a service
+    @RequestLine("POST /v2/control-planes/{cpId}/core-entities/services/{serviceId}/plugins")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongPlugin createPluginForService(@Param("cpId") String controlPlaneId, @Param("serviceId") String serviceId,
+                                      KongPlugin body) throws KongGatewayException;
 
-  @RequestLine("POST /v2/control-planes/{cpId}/core-entities/routes")
-  @Headers({"Accept: application/json", "Content-Type: application/json"})
-  KongRoute createRoute(@Param("cpId") String controlPlaneId, KongRoute body);
+    @RequestLine("DELETE /v2/control-planes/{controlPlaneId}/core-entities/services/{ServiceId}/routes/{RouteId}")
+    @Headers({"Accept: application/json"})
+    void deleteRouteAssociatedWithService(@Param("controlPlaneId") String controlPlaneId,
+                                          @Param("ServiceId") String serviceId, @Param("RouteId") String routeId)
+            throws KongGatewayException;
+
+    @RequestLine("DELETE /v2/control-planes/{controlPlaneId}/core-entities/services/{ServiceId}")
+    @Headers({"Accept: application/json"})
+    void deleteService(@Param("controlPlaneId") String controlPlaneId, @Param("ServiceId") String serviceId)
+            throws KongGatewayException;
+
+    @RequestLine("PUT /v2/control-planes/{controlPlaneId}/core-entities/services/{ServiceId}/routes/{RouteId}")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongRoute upsertRouteAssociatedWithService(@Param("controlPlaneId") String controlPlaneId,
+                                               @Param("ServiceId") String serviceId, @Param("RouteId") String routeId,
+                                               KongRoute body) throws KongGatewayException;
+
+    @RequestLine("PUT /v2/control-planes/{controlPlaneId}/core-entities/services/{ServiceId}/plugins/{PluginId}")
+    @Headers({"Accept: application/json", "Content-Type: application/json"})
+    KongPlugin upsertPluginsAssociatedWithService(@Param("controlPlaneId") String controlPlaneId,
+                                                  @Param("ServiceId") String serviceId,
+                                                  @Param("PluginId") String pluginId,
+                                                  KongPlugin kongPlugin) throws KongGatewayException;
+
+    @RequestLine("DELETE /v2/control-planes/{controlPlaneId}/core-entities/services/{ServiceId}/plugins/{PluginId}")
+    @Headers({"Accept: application/json"})
+    void deletePluginAssociatedWithService(@Param("controlPlaneId") String controlPlaneId,
+                                           @Param("ServiceId") String serviceId,
+                                           @Param("PluginId") String pluginId) throws KongGatewayException;
 }
