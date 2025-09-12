@@ -26,15 +26,20 @@ import com.azure.core.http.netty.NettyAsyncHttpClientBuilder;
 import com.azure.core.http.rest.PagedIterable;
 import com.azure.core.management.AzureEnvironment;
 import com.azure.core.management.profile.AzureProfile;
+import com.azure.core.util.Context;
 import com.azure.identity.ClientSecretCredentialBuilder;
 import com.azure.resourcemanager.apimanagement.ApiManagementManager;
 import com.azure.resourcemanager.apimanagement.models.ApiContract;
+import com.azure.resourcemanager.apimanagement.models.ApiRevisionContract;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
 import org.wso2.azure.gw.client.util.AzureAPIUtil;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.FederatedAPIDiscovery;
 import org.wso2.carbon.apimgt.api.model.API;
+import org.wso2.carbon.apimgt.api.model.DiscoveredAPI;
 import org.wso2.carbon.apimgt.api.model.Environment;
 
 import java.util.ArrayList;
@@ -106,18 +111,58 @@ public class AzureFederatedAPIDiscovery implements FederatedAPIDiscovery {
     }
 
     @Override
-    public List<API> discoverAPI() {
-        PagedIterable<ApiContract> apis = manager.apis().listByService(resourceGroup, serviceName);
-        List<API> retrievedAPIs = new ArrayList<>();
+    public List<DiscoveredAPI> discoverAPI() {
+        PagedIterable<ApiContract> apis = manager.apis().listByService(resourceGroup, serviceName, "isCurrent eq true",
+                        null, /* top */
+                        null, /* skip */
+                        null, /* tags */
+                        null, /* expandApiVersionSet */
+                        Context.NONE
+                );
+        List<DiscoveredAPI> retrievedAPIs = new ArrayList<>();
         for (ApiContract api : apis) {
             try {
+                // Get API
                 String apiDefinition = AzureAPIUtil.getRestApiDefinition(manager, httpClient, api);
                 API apiArtifact = AzureAPIUtil.restAPItoAPI(api, apiDefinition, organization, environment);
-                retrievedAPIs.add(apiArtifact);
+
+                // Get current revision
+                PagedIterable<ApiRevisionContract> revisions = manager.apiRevisions().listByService(resourceGroup,
+                        serviceName, api.name(), "isCurrent eq true", /* top */ null, /* skip */ null, Context.NONE);
+                ApiRevisionContract revisionContract = revisions.stream().findFirst().orElse(null);
+                if (revisionContract == null) {
+                    throw new APIManagementException("Current API Revision not found for api: " + api.name());
+                }
+                String referenceArtifact = AzureAPIUtil.generateReferenceArtifact(apiArtifact, api, null,
+                        revisionContract);
+
+                retrievedAPIs.add(new DiscoveredAPI(apiArtifact, referenceArtifact));
+
             } catch (APIManagementException e) {
                 log.error("Error retrieving API definition for API: " + api.name(), e);
             }
         }
         return retrievedAPIs;
+    }
+
+    @Override
+    public boolean isAPIUpdated(String existingReferenceArtifact, String newReferenceArtifact) {
+        if (existingReferenceArtifact == null || newReferenceArtifact == null) {
+            if (existingReferenceArtifact == null) {
+                log.error("Existing reference artifact null when checking if discovered Azure API is updated.");
+            }
+            if (newReferenceArtifact == null) {
+                log.error("New reference artifact null when checking if discovered Azure API is updated.");
+            }
+            return true;
+        }
+        JsonObject existingArtifact = JsonParser.parseString(existingReferenceArtifact).getAsJsonObject();
+        JsonObject newArtifact = JsonParser.parseString(newReferenceArtifact).getAsJsonObject();
+
+        long existingRevisionCreatedTime = existingArtifact
+                .get(AzureConstants.AZURE_EXTERNAL_REFERENCE_CREATED_TIME_EPOCH).getAsLong();
+        long newRevisionCreatedTime = newArtifact
+                .get(AzureConstants.AZURE_EXTERNAL_REFERENCE_CREATED_TIME_EPOCH).getAsLong();
+        return existingRevisionCreatedTime != newRevisionCreatedTime;
     }
 }
