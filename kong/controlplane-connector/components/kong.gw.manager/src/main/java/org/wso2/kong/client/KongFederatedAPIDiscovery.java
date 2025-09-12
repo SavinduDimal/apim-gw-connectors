@@ -18,6 +18,8 @@
 
 package org.wso2.kong.client;
 
+import com.google.gson.Gson;
+
 import feign.Feign;
 import feign.RequestInterceptor;
 
@@ -34,6 +36,7 @@ import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.FederatedAPIDiscovery;
 import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.APIIdentifier;
+import org.wso2.carbon.apimgt.api.model.DiscoveredAPI;
 import org.wso2.carbon.apimgt.api.model.Environment;
 import org.wso2.carbon.apimgt.api.model.Tier;
 import org.wso2.carbon.apimgt.impl.kmclient.ApacheFeignHttpClient;
@@ -109,7 +112,7 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
     }
 
     @Override
-    public List<API> discoverAPI() {
+    public List<DiscoveredAPI> discoverAPI() {
         if (!Objects.equals(deploymentType, KongConstants.KONG_KUBERNETES_DEPLOYMENT)) {
             // List APIs (V3)
             KongListResponse<KongAPI> apisResp = apiGatewayClient.listAPIs(KongConstants.DEFAULT_API_LIST_LIMIT);
@@ -130,8 +133,9 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 }
             }
 
-            List<API> retrievedAPIs = new ArrayList<>();
+            List<DiscoveredAPI> retrievedAPIs = new ArrayList<>();
             Set<String> linkedServices = new HashSet<>();
+            Gson gson = new Gson();
 
             // Iterate APIs
             for (KongAPI kongAPI : apis) {
@@ -232,7 +236,9 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 if (selectedAPILevelRateLimitPolicy != null) {
                     api.setApiLevelPolicy(selectedAPILevelRateLimitPolicy);
                 }
-                retrievedAPIs.add(api);
+
+                DiscoveredAPI discoveredAPI = new DiscoveredAPI(api, gson.toJson(api));
+                retrievedAPIs.add(discoveredAPI);
             }
 
             // If there are Services without APIs, we can still retrieve them as APIs
@@ -324,11 +330,17 @@ public class KongFederatedAPIDiscovery implements FederatedAPIDiscovery {
                 if (selectedAPILevelRateLimitPolicy != null) {
                     api.setApiLevelPolicy(selectedAPILevelRateLimitPolicy);
                 }
-                retrievedAPIs.add(api);
+                DiscoveredAPI discoveredAPI = new DiscoveredAPI(api, gson.toJson(api));
+                retrievedAPIs.add(discoveredAPI);
             }
             return retrievedAPIs;
         } else {
             return Collections.emptyList();
         }
+    }
+
+    @Override
+    public boolean isAPIUpdated(String existingReferenceArtifact, String newReferenceArtifact) {
+        return !java.util.Objects.equals(existingReferenceArtifact, newReferenceArtifact);
     }
 }
