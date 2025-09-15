@@ -78,9 +78,11 @@ func Run(conf *config.Config, mgr manager.Manager) {
 	loggers.LoggerAgent.Infof("Starting Kong CR Discovery")
 	go discovery.CRWatcher.Watch()
 
-	loggers.LoggerAgent.Infof("Kong agent startup completed successfully")
-
+	loggers.LoggerAgent.Infof("Fetching APIs on startup")
 	synchronizer.FetchAPIsOnEvent(conf, nil, mgr.GetClient())
 
+	loggers.LoggerAgent.Infof("Fetching subscriptions on startup")
 	synchronizer.FetchAndProcessSubscriptionsOnStartUp(mgr.GetClient())
+
+	loggers.LoggerAgent.Infof("Kong agent startup completed successfully")
 }
