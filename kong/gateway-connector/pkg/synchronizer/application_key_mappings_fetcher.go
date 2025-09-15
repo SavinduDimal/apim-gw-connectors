@@ -38,19 +38,8 @@ import (
 func FetchApplicationKeyMappingsOnEvent(applicationUUID string, organization string, c client.Client) ([]eventhub.ApplicationKeyMapping, string) {
 	logger.LoggerSynchronizer.Debugf("Starting application key mappings fetch | applicationUUID:%s organization:%s", applicationUUID, organization)
 
-	conf, errReadConfig := config.ReadConfigs()
-	if errReadConfig != nil {
-		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
-	}
-
-	applicationKeyMappings, errorMsg := sync.FetchApplicationKeyMappings(organization)
+	applicationKeyMappings, errorMsg := FetchApplicationKeyMappings(organization, c)
 	if applicationKeyMappings == nil {
-		return nil, errorMsg
-	}
-
-	if len(applicationKeyMappings) == 0 && errorMsg != constants.EmptyString {
-		logger.LoggerSynchronizer.Warnf("Error fetching application key mappings in retry attempt %d : %s", retryAttempt, errorMsg)
-		go retryApplicationKeyMappingsData(applicationUUID, organization, conf, errorMsg, c)
 		return nil, errorMsg
 	}
 
@@ -67,11 +56,34 @@ func FetchApplicationKeyMappingsOnEvent(applicationUUID string, organization str
 	return matchedKeys, errorMsg
 }
 
-func retryApplicationKeyMappingsData(applicationUUID string, organization string, conf *config.Config, errorMessage string, c client.Client) {
+// FetchApplicationKeyMappings fetches the policies from the control plane on the start up and notification event updates
+func FetchApplicationKeyMappings(organization string, c client.Client) ([]eventhub.ApplicationKeyMapping, string) {
+	logger.LoggerSynchronizer.Debugf("Starting application key mappings fetch")
+
+	conf, errReadConfig := config.ReadConfigs()
+	if errReadConfig != nil {
+		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
+	}
+
+	applicationKeyMappings, errorMsg := sync.FetchApplicationKeyMappings(organization)
+	if applicationKeyMappings == nil {
+		return nil, errorMsg
+	}
+
+	if len(applicationKeyMappings) == 0 && errorMsg != constants.EmptyString {
+		logger.LoggerSynchronizer.Warnf("Error fetching application key mappings in retry attempt %d : %s", retryAttempt, errorMsg)
+		go retryApplicationKeyMappingsData(organization, conf, errorMsg, c)
+		return nil, errorMsg
+	}
+
+	return applicationKeyMappings, errorMsg
+}
+
+func retryApplicationKeyMappingsData(organization string, conf *config.Config, errorMessage string, c client.Client) {
 	logger.LoggerSynchronizer.Debugf("Time Duration for retrying: %v",
 		conf.ControlPlane.RetryInterval*time.Second)
 	time.Sleep(conf.ControlPlane.RetryInterval * time.Second)
-	FetchApplicationKeyMappingsOnEvent(applicationUUID, organization, c)
+	FetchApplicationKeyMappings(organization, c)
 	retryAttempt++
 	if retryAttempt > constants.MaxRetries {
 		logger.LoggerSynchronizer.Error(errorMessage)

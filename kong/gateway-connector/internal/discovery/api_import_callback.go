@@ -22,6 +22,7 @@ import (
 	discoverPkg "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/discovery"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
+	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -34,6 +35,7 @@ func (k *KongAPIImportCallback) OnAPIImportSuccess(kongAPIUUID, apiID, revisionI
 	loggers.LoggerWatcher.Infof("%s API import callback triggered - kongAPIUUID: %s, apiID: %s, revisionID: %s, CR: %s/%s",
 		agentName, kongAPIUUID, apiID, revisionID, crNamespace, crName)
 
+	kongMgtServer.AddProcessedAPI(apiID)
 	// Find and update the Service CR with the API ID label
 	if err := k.updateServiceCR(kongAPIUUID, apiID, revisionID, crNamespace); err != nil {
 		loggers.LoggerWatcher.Errorf("Failed to update Service with apiID for API %s: %v", kongAPIUUID, err)

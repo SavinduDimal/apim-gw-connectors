@@ -79,4 +79,8 @@ func Run(conf *config.Config, mgr manager.Manager) {
 	go discovery.CRWatcher.Watch()
 
 	loggers.LoggerAgent.Infof("Kong agent startup completed successfully")
+
+	synchronizer.FetchAPIsOnEvent(conf, nil, mgr.GetClient())
+
+	synchronizer.FetchAndProcessSubscriptionsOnStartUp(mgr.GetClient())
 }

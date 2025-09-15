@@ -29,6 +29,7 @@ import (
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 	internalk8sClient "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/k8sClient"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
+	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/synchronizer"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -88,6 +89,7 @@ func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c clien
 		}
 		if strings.EqualFold(eventConstants.RemoveAPIFromGateway, apiEvent.Event.Type) {
 			internalk8sClient.UndeployAPICRs(apiEvent.UUID, c)
+			kongMgtServer.RemoveProcessedAPI(apiEvent.UUID)
 			break
 		}
 	}

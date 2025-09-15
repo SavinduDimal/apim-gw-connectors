@@ -35,6 +35,7 @@ import (
 	internalk8sClient "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/k8sClient"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/utils"
+	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/synchronizer"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/transformer"
 	corev1 "k8s.io/api/core/v1"
@@ -68,10 +69,18 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 		return
 	}
 
-	logger.LoggerEvents.Infof("Received Subscription Event: %+v", subscriptionEvent)
+	if !kongMgtServer.IsAPIProcessed(subscriptionEvent.APIUUID) {
+		logger.LoggerEvents.Infof("API %s is not processed. skipping subscription event", subscriptionEvent.APIUUID)
+		return
+	}
+
+	logger.LoggerEvents.Debugf("Received Subscription Event: %+v", subscriptionEvent)
 	switch subscriptionEvent.Event.Type {
 	case eventConstants.SubscriptionCreate:
-		createApplicationConsumerForBothEnvironments(subscriptionEvent.ApplicationUUID, c, conf)
+		if !kongMgtServer.IsApplicationProcessed(subscriptionEvent.ApplicationUUID) {
+			kongMgtServer.AddProcessedApplication(subscriptionEvent.ApplicationUUID)
+			synchronizer.CreateApplicationConsumerForBothEnvironments(subscriptionEvent.ApplicationUUID, c, conf)
+		}
 		createSecretsForKeyGeneration(subscriptionEvent, c, conf)
 		createSubscription(subscriptionEvent, c, conf, constants.ProductionType)
 		createSubscription(subscriptionEvent, c, conf, constants.SandboxType)
@@ -87,10 +96,6 @@ func HandleSubscriptionEvents(data []byte, eventType string, c client.Client) {
 func createSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client, conf *config.Config, environment string) {
 	logger.LoggerEvents.Debugf("Creating subscription|ApplicationUUID:%s Environment:%s\n", subscriptionEvent.ApplicationUUID, environment)
 
-	addCredentials := []string{}
-	addAnnotations := []string{}
-
-	// create and deploy kong acl secret CR
 	aclGroupNames, err := generateACLGroupNameFromK8s(subscriptionEvent.APIName, environment, c, conf)
 	if err != nil {
 		logger.LoggerEvents.Debugf("Failed to generate ACL group names from K8s resources: %v", err)
@@ -98,53 +103,8 @@ func createSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 		aclGroupNames = []string{transformer.GenerateACLGroupName(subscriptionEvent.APIName, environment)}
 	}
 
-	aclCredentialSecretConfig := map[string]string{
-		kongConstants.GroupField: aclGroupNames[0],
-	}
-	subscriptionIdentifier := subscriptionEvent.APIUUID + environment
-	aclCredentialSecret := transformer.GenerateK8sCredentialSecret(subscriptionEvent.ApplicationUUID, subscriptionIdentifier, kongConstants.ACLCredentialType, aclCredentialSecretConfig)
-	aclCredentialSecret.Labels[kongConstants.EnvironmentLabel] = strings.ToLower(environment)
-	aclCredentialSecret.Namespace = conf.DataPlane.Namespace
-	addCredentials = append(addCredentials, aclCredentialSecret.ObjectMeta.Name)
-	internalk8sClient.DeploySecretCR(aclCredentialSecret, c)
-
-	// update consumer subscription limit plugin annotation
-	subscriptionPolicy := managementserver.GetSubscriptionPolicy(subscriptionEvent.PolicyID, subscriptionEvent.TenantDomain)
-	logger.LoggerEvents.Infof("Subscription Policy: %+v", subscriptionPolicy)
-	if subscriptionPolicy.Name != kongConstants.EmptyString && subscriptionPolicy.Name != kongConstants.UnlimitedPolicyName {
-		rateLimitCRName := transformer.GeneratePolicyCRName(subscriptionPolicy.Name, subscriptionPolicy.TenantDomain, kongConstants.RateLimitingPlugin, kongConstants.SubscriptionTypeKey)
-		addAnnotations = append(addAnnotations, rateLimitCRName)
-	}
-
-	// get available jwt credentials for the application
-	jwtSecretCredentials := internalk8sClient.GetK8sSecrets(map[string]string{
-		kongConstants.ApplicationUUIDLabel: subscriptionEvent.ApplicationUUID,
-		kongConstants.EnvironmentLabel:     environment,
-		kongConstants.KongCredentialLabel:  kongConstants.JWTCredentialType,
-	}, c, conf)
-	for _, jwtSecretCredential := range jwtSecretCredentials {
-		addCredentials = append(addCredentials, jwtSecretCredential.Name)
-	}
-
-	if len(addCredentials) > 0 {
-		updateErr := utils.RetryKongCRUpdate(func() error {
-			return internalk8sClient.UpdateKongConsumerCredential(subscriptionEvent.ApplicationUUID, environment, c, conf, addCredentials, nil)
-		}, kongConstants.UpdateConsumerCredentialTask, kongConstants.MaxRetries)
-		if updateErr != nil {
-			logger.LoggerEvents.Errorf("Failed to update Kong consumer credentials: %v", updateErr)
-			return
-		}
-	}
-
-	if len(addAnnotations) > 0 {
-		updateErr := utils.RetryKongCRUpdate(func() error {
-			return internalk8sClient.UpdateKongConsumerPluginAnnotation(subscriptionEvent.ApplicationUUID, environment, c, conf, addAnnotations, nil)
-		}, kongConstants.UpdateConsumerPluginAnnotationTask, kongConstants.MaxRetries)
-		if updateErr != nil {
-			logger.LoggerEvents.Errorf("Failed to update Kong consumer plugin annotations: %v", updateErr)
-			return
-		}
-	}
+	synchronizer.CreateSubscription(subscriptionEvent.ApplicationUUID, subscriptionEvent.APIUUID, subscriptionEvent.PolicyID,
+		subscriptionEvent.TenantDomain, aclGroupNames, c, conf, environment, false)
 }
 
 func updateSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client, conf *config.Config, environment string) {
@@ -262,7 +222,7 @@ func removeSubscription(subscriptionEvent msg.SubscriptionEvent, c client.Client
 	handleConsumerAnnotations(subscriptionEvent, consumer, c, conf, environment)
 
 	// Handle consumer credentials cleanup
-	handleConsumerCredentials(consumer, consumerName, c, conf)
+	handleConsumerCredentials(consumer, consumerName, appUUID, c, conf)
 }
 
 func handleConsumerAnnotations(subscriptionEvent msg.SubscriptionEvent, consumer *v1.KongConsumer, c client.Client, conf *config.Config, environment string) {
@@ -295,11 +255,12 @@ func handleConsumerAnnotations(subscriptionEvent msg.SubscriptionEvent, consumer
 	}
 }
 
-func handleConsumerCredentials(consumer *v1.KongConsumer, consumerName string, c client.Client, conf *config.Config) {
+func handleConsumerCredentials(consumer *v1.KongConsumer, consumerName string, applicationUUID string, c client.Client, conf *config.Config) {
 	credentials := consumer.Credentials
 	if len(credentials) == 0 {
 		logger.LoggerEvents.Debugf("No credentials found for consumer %s, deleting consumer", consumerName)
 		internalk8sClient.UnDeployKongConsumerCR(consumerName, c, conf)
+		kongMgtServer.RemoveProcessedApplication(applicationUUID)
 		return
 	}
 
@@ -320,28 +281,14 @@ func handleConsumerCredentials(consumer *v1.KongConsumer, consumerName string, c
 			}
 		}
 		internalk8sClient.UnDeployKongConsumerCR(consumerName, c, conf)
+		kongMgtServer.RemoveProcessedApplication(applicationUUID)
 		return
 	}
 
 	logger.LoggerEvents.Debugf("ACL credentials found for consumer %s, keeping consumer", consumerName)
 }
 
-// createApplicationConsumerForBothEnvironments creates consumers for both production and sandbox environments
-func createApplicationConsumerForBothEnvironments(applicationUUID string, c client.Client, conf *config.Config) {
-	createApplicationConsumer(applicationUUID, c, conf, constants.ProductionType)
-	createApplicationConsumer(applicationUUID, c, conf, constants.SandboxType)
-}
-
-func createApplicationConsumer(applicationUUID string, c client.Client, conf *config.Config, environment string) {
-	logger.LoggerEvents.Debugf("Creating application consumer for ApplicationUUID: %s, Environment: %s", applicationUUID, environment)
-
-	consumer := transformer.CreateConsumer(applicationUUID, environment, conf)
-	consumer.Namespace = conf.DataPlane.Namespace
-
-	internalk8sClient.DeployKongConsumerCR(consumer, c)
-}
-
-// createApplicationConsumerForBothEnvironments creates consumers for both production and sandbox environments
+// createSecretsForKeyGeneration creates secrets for both production and sandbox environments
 func createSecretsForKeyGeneration(subscriptionEvent msg.SubscriptionEvent, c client.Client, conf *config.Config) {
 	logger.LoggerEvents.Debugf("Creating secrets for application key mappings for ApplicationUUID: %s, Environment: %s",
 		subscriptionEvent.ApplicationUUID, subscriptionEvent.TenantDomain)
@@ -351,8 +298,8 @@ func createSecretsForKeyGeneration(subscriptionEvent msg.SubscriptionEvent, c cl
 	if len(applicationKeyMappings) > 0 {
 		logger.LoggerEvents.Debugf("Fetched %d application key mappings for application %s", len(applicationKeyMappings), subscriptionEvent.ApplicationUUID)
 		for _, applicationKeyMapping := range applicationKeyMappings {
-			processApplicationRegistration(
-				subscriptionEvent.ApplicationUUID,
+			synchronizer.ProcessApplicationRegistration(
+				applicationKeyMapping.ApplicationUUID,
 				applicationKeyMapping.ConsumerKey,
 				applicationKeyMapping.KeyManager,
 				subscriptionEvent.TenantDomain,
@@ -377,11 +324,16 @@ func generateACLGroupNameFromK8s(apiName, environment string, c client.Client, c
 	}
 
 	allPluginNames := findAllPluginsFromHTTPRoutes(httpRoutes)
+	logger.LoggerEvents.Debugf("Found %d plugin names from HTTPRoutes for service %s: %v",
+		len(allPluginNames), service.Name, allPluginNames)
 
 	allowValues, err := extractACLAllowValues(allPluginNames, service.Namespace)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract ACL allow values: %v", err)
 	}
+
+	logger.LoggerEvents.Debugf("Extracted %d ACL allow values for service %s",
+		len(allowValues), service.Name)
 
 	if len(allowValues) > 0 {
 		return allowValues, nil
