@@ -20,7 +20,8 @@ package agent
 import (
 	"fmt"
 
-	apkAgent "github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector"
+	// apkAgent "github.com/wso2-extensions/apim-gw-connectors/apk/gateway-connector"
+	egAgent "github.com/wso2-extensions/apim-gw-connectors/eg/gateway-connector"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/agent"
 	kongAgent "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector"
 )
@@ -50,6 +51,7 @@ var agentReg = &agentRegistry{
 
 // init function registers the default gateway agents when the package is initialized.
 func init() {
-	agentReg.RegisterAgent("apk", &apkAgent.Agent{})
+	agentReg.RegisterAgent("eg", &egAgent.Agent{})
 	agentReg.RegisterAgent("kong", &kongAgent.Agent{})
+	// agentReg.RegisterAgent("apk", &apkAgent.Agent{})
 }
