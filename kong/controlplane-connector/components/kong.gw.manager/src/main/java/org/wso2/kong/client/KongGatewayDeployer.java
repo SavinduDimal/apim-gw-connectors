@@ -61,42 +61,40 @@ public class KongGatewayDeployer implements GatewayDeployer {
 
     @Override
     public void init(Environment environment) throws APIManagementException {
+        log.debug("Initializing KongConnect Gateway Deployer for environment: " + environment.getName());
         this.environment = environment;
         if (!KongAPIUtil.isKubernetesDeployment(environment)) {
-            // TODO: Need to add support for non kubernetes deployments
-        }
-        log.debug("Initializing KongConnect Gateway Deployer for environment: " + environment.getName());
-        Map<String, String> properties = environment.getAdditionalProperties();
-        if (properties == null) {
-            throw new APIManagementException("Missing environment additionalProperties for Kong configuration");
-        }
-        try {
-            this.environment = environment;
-            String adminURL = properties.get(KongConstants.KONG_ADMIN_URL);
-            this.controlPlaneId = properties.get(KongConstants.KONG_CONTROL_PLANE_ID);
-            this.authToken = properties.get(KongConstants.KONG_AUTH_TOKEN);
-
-            if (adminURL == null || controlPlaneId == null || authToken == null) {
-                throw new APIManagementException("Missing required Kong environment configurations");
+            Map<String, String> properties = environment.getAdditionalProperties();
+            if (properties == null) {
+                throw new APIManagementException("Missing environment additionalProperties for Kong configuration");
             }
-            // Build Apache HttpClient (add timeouts/SSL as needed)
-            HttpClient httpClient = APIUtil.getHttpClient(adminURL);
+            try {
+                String adminURL = properties.get(KongConstants.KONG_ADMIN_URL);
+                this.controlPlaneId = properties.get(KongConstants.KONG_CONTROL_PLANE_ID);
+                this.authToken = properties.get(KongConstants.KONG_AUTH_TOKEN);
 
-            // Bearer token interceptor
-            RequestInterceptor auth = template ->
-                    template.header("Authorization", "Bearer " + authToken);
-            apiGatewayClient = Feign.builder()
-                    .client(new ApacheFeignHttpClient(httpClient))
-                    .options(new Request.Options(10000, 30000))
-                    .encoder(new GsonEncoder())
-                    .decoder(new GsonDecoder())
-                    .errorDecoder(new KongErrorDecoder())
-                    .logger(new Slf4jLogger(KongKonnectApi.class))
-                    .requestInterceptor(auth)
-                    .target(KongKonnectApi.class, adminURL);
-            log.debug("Initialization completed Kong Gateway Deployer for environment: " + environment.getName());
-        } catch (Exception e) {
-            throw new APIManagementException("Error occurred while initializing Kong Gateway Deployer", e);
+                if (adminURL == null || controlPlaneId == null || authToken == null) {
+                    throw new APIManagementException("Missing required Kong environment configurations");
+                }
+                // Build Apache HttpClient (add timeouts/SSL as needed)
+                HttpClient httpClient = APIUtil.getHttpClient(adminURL);
+
+                // Bearer token interceptor
+                RequestInterceptor auth = template ->
+                        template.header("Authorization", "Bearer " + authToken);
+                apiGatewayClient = Feign.builder()
+                        .client(new ApacheFeignHttpClient(httpClient))
+                        .options(new Request.Options(10000, 30000))
+                        .encoder(new GsonEncoder())
+                        .decoder(new GsonDecoder())
+                        .errorDecoder(new KongErrorDecoder())
+                        .logger(new Slf4jLogger(KongKonnectApi.class))
+                        .requestInterceptor(auth)
+                        .target(KongKonnectApi.class, adminURL);
+                log.debug("Initialization completed Kong Gateway Deployer for environment: " + environment.getName());
+            } catch (Exception e) {
+                throw new APIManagementException("Error occurred while initializing Kong Gateway Deployer", e);
+            }
         }
     }
 
