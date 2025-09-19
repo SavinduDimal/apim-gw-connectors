@@ -29,8 +29,9 @@ import (
 	internalk8sClient "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/k8sClient"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/utils"
+	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
+	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/synchronizer"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/transformer"
-	v1 "k8s.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -73,7 +74,13 @@ func handleApplicationRegistration(data []byte, c client.Client, conf *config.Co
 		return
 	}
 
-	processApplicationRegistration(
+	if !kongMgtServer.IsApplicationProcessed(applicationRegistrationEvent.ApplicationUUID) {
+		logger.LoggerEvents.Infof("Application %s is not processed. skipping application registration event",
+			applicationRegistrationEvent.ApplicationUUID)
+		return
+	}
+
+	synchronizer.ProcessApplicationRegistration(
 		applicationRegistrationEvent.ApplicationUUID,
 		applicationRegistrationEvent.ConsumerKey,
 		applicationRegistrationEvent.KeyManager,
@@ -82,47 +89,6 @@ func handleApplicationRegistration(data []byte, c client.Client, conf *config.Co
 		c,
 		conf,
 	)
-}
-
-// processApplicationRegistration handles issuer secrets, credentials, and consumer updates
-func processApplicationRegistration(applicationUUID, consumerKey, keyManagerName, tenantOrg, environment string, c client.Client, conf *config.Config) {
-	logger.LoggerEvents.Debugf("Received Application Registration Event: applicationUUID=%s, consumerKey=%s, environment=%s",
-		applicationUUID, consumerKey, environment)
-
-	issuerSecrets := internalk8sClient.GetK8sSecrets(
-		map[string]string{
-			kongConstants.TypeLabel:           kongConstants.IssuerSecretType,
-			kongConstants.OrganizationLabel:   transformer.GenerateSHA1Hash(tenantOrg),
-			kongConstants.KeyManagerNameLabel: transformer.PrepareDashedName(keyManagerName),
-		},
-		c, conf,
-	)
-	if len(issuerSecrets) == 0 {
-		logger.LoggerEvents.Errorf("No issuers are found")
-		return
-	}
-
-	addCredentials := make([]string, 0, len(issuerSecrets))
-	for _, issuerSecret := range issuerSecrets {
-		jwtCredentialSecret := createIssuerKongSecretCredential(
-			issuerSecret, c, conf,
-			applicationUUID,
-			consumerKey,
-			environment,
-		)
-		addCredentials = append(addCredentials, jwtCredentialSecret.ObjectMeta.Name)
-	}
-
-	utils.RetryKongCRUpdate(func() error {
-		internalk8sClient.UpdateKongConsumerCredential(
-			applicationUUID,
-			strings.ToLower(environment),
-			c, conf,
-			addCredentials,
-			nil,
-		)
-		return nil
-	}, kongConstants.AddApplicationKeyTaskName, kongConstants.MaxRetries)
 }
 
 // handleRemoveApplicationKeyMapping processes application key removal events
@@ -140,6 +106,12 @@ func handleRemoveApplicationKeyMapping(data []byte, c client.Client, conf *confi
 	}
 
 	logger.LoggerEvents.Debugf("Received Remove Application Key Mapping Event: %+v", applicationRegistrationEvent)
+
+	if !kongMgtServer.IsApplicationProcessed(applicationRegistrationEvent.ApplicationUUID) {
+		logger.LoggerEvents.Infof("Application %s is not processed. skipping remove application key mapping event",
+			applicationRegistrationEvent.ApplicationUUID)
+		return
+	}
 
 	jwtCredentialSecretName := transformer.GenerateSecretName(
 		applicationRegistrationEvent.ApplicationUUID,
@@ -184,37 +156,16 @@ func handleApplicationEvent(data []byte, c client.Client, conf *config.Config) {
 	case eventConstants.ApplicationUpdate:
 		logger.LoggerEvents.Debugf("Application Update for application UUID %s", applicationEvent.UUID)
 	case eventConstants.ApplicationDelete:
+		logger.LoggerEvents.Debugf("Application Delete for application UUID %s", applicationEvent.UUID)
+		if !kongMgtServer.IsApplicationProcessed(applicationEvent.UUID) {
+			logger.LoggerEvents.Infof("Application %s is not processed. skipping deletion event",
+				applicationEvent.UUID)
+			return
+		}
 		internalk8sClient.UndeployAPPCRs(applicationEvent.UUID, c)
+		kongMgtServer.RemoveProcessedApplication(applicationEvent.UUID)
 	default:
 		logger.LoggerEvents.Warnf("Application Event Type '%s' is not recognized for the Event under Application UUID %s",
 			applicationEvent.Event.Type, applicationEvent.UUID)
 	}
-}
-
-func createIssuerKongSecretCredential(issuerSecret v1.Secret, c client.Client, conf *config.Config, applicationUUID string, consumerKey string, environment string) *v1.Secret {
-	logger.LoggerEvents.Debugf("Creating issuer Kong secret credential for ApplicationUUID: %s, Environment: %s", applicationUUID, environment)
-
-	rsaPublicKey, exists := issuerSecret.Data[kongConstants.PublicKeyField]
-	if !exists {
-		logger.LoggerEvents.Errorf("Public key not found in issuer secret")
-		return nil
-	}
-
-	jwtCredentialSecretConfig := map[string]string{
-		kongConstants.AlgorithmField:    kongConstants.RS256Algorithm,
-		kongConstants.KeyField:          consumerKey,
-		kongConstants.RSAPublicKeyField: string(rsaPublicKey),
-	}
-
-	jwtCredentialSecret := transformer.GenerateK8sCredentialSecret(applicationUUID, consumerKey, kongConstants.JWTCredentialType, jwtCredentialSecretConfig)
-
-	if jwtCredentialSecret.Labels == nil {
-		jwtCredentialSecret.Labels = make(map[string]string, 1)
-	}
-	jwtCredentialSecret.Labels[kongConstants.EnvironmentLabel] = strings.ToLower(environment)
-	jwtCredentialSecret.Namespace = conf.DataPlane.Namespace
-
-	internalk8sClient.DeploySecretCR(jwtCredentialSecret, c)
-
-	return jwtCredentialSecret
 }

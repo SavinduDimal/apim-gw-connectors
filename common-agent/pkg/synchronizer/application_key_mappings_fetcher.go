@@ -94,8 +94,6 @@ func FetchApplicationKeyMappings(organization string) ([]eventhub.ApplicationKey
 
 	if organization != "" {
 		req.Header.Set("xWSO2Tenant", organization)
-	} else {
-		req.Header.Set("xWSO2Tenant", "ALL")
 	}
 
 	// Make the request

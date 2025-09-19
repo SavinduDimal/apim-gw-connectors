@@ -30,6 +30,7 @@ import (
 	apimTransformer "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/transformer"
 	kongConstants "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
+	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
@@ -135,6 +136,7 @@ func GenerateCR(api string, organizationID string, apiUUID string, conf *config.
 	logger.LoggerUtils.Infof("GenerateCR|CR generation completed|HTTPRoutes:%d Services:%d Plugins:%d\n",
 		len(k8sArtifact.HTTPRoutes), len(k8sArtifact.Services), len(k8sArtifact.KongPlugins))
 
+	kongMgtServer.AddProcessedAPI(apiUUID)
 	return &k8sArtifact
 }
 
@@ -494,4 +496,30 @@ func GenerateKongPlugin(operation *types.Operation, pluginName string, targetRef
 			Raw: GenerateJSON(config),
 		},
 	}
+}
+
+func CreateIssuerKongSecretCredential(issuerSecret corev1.Secret, conf *config.Config, applicationUUID string, consumerKey string, environment string) *corev1.Secret {
+	logger.LoggerEvents.Debugf("Creating issuer Kong secret credential for ApplicationUUID: %s, Environment: %s", applicationUUID, environment)
+
+	rsaPublicKey, exists := issuerSecret.Data[kongConstants.PublicKeyField]
+	if !exists {
+		logger.LoggerEvents.Errorf("Public key not found in issuer secret")
+		return nil
+	}
+
+	jwtCredentialSecretConfig := map[string]string{
+		kongConstants.AlgorithmField:    kongConstants.RS256Algorithm,
+		kongConstants.KeyField:          consumerKey,
+		kongConstants.RSAPublicKeyField: string(rsaPublicKey),
+	}
+
+	jwtCredentialSecret := GenerateK8sCredentialSecret(applicationUUID, consumerKey, kongConstants.JWTCredentialType, jwtCredentialSecretConfig)
+
+	if jwtCredentialSecret.Labels == nil {
+		jwtCredentialSecret.Labels = make(map[string]string, 1)
+	}
+	jwtCredentialSecret.Labels[kongConstants.EnvironmentLabel] = strings.ToLower(environment)
+	jwtCredentialSecret.Namespace = conf.DataPlane.Namespace
+
+	return jwtCredentialSecret
 }

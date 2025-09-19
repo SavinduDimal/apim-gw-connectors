@@ -1,0 +1,140 @@
+/*
+ *  Copyright (c) 2025, WSO2 LLC. (http://www.wso2.org) All Rights Reserved.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *  http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ *
+ */
+
+/*
+ * Package "synchronizer" contains artifacts relate to fetching APIs and
+ * API related updates from the control plane event-hub.
+ * This file contains functions to retrieve APIs and API updates.
+ */
+
+package synchronizer
+
+import (
+	"encoding/json"
+	"io/ioutil"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/wso2-extensions/apim-gw-connectors/common-agent/config"
+	pkgAuth "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/auth"
+	eventhub "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/eventhub/types"
+	logger "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/loggers"
+	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/tlsutils"
+)
+
+const (
+	// SubscriptionsEndpoint is the endpoint for fetching all subscriptions
+	SubscriptionsEndpoint string = "internal/data/v1/subscriptions"
+	// SubscriptionsByAPIUUIDEndpoint is the endpoint for fetching subscriptions by API UUID
+	SubscriptionsByAPIUUIDEndpoint string = "internal/data/v1/subscriptions?apiUUID="
+)
+
+// FetchSubscriptions will fetch subscriptions from control plane
+func FetchSubscriptions(apiUUID string) ([]eventhub.Subscription, string) {
+	logger.LoggerSync.Infof("Starting Subscription Fetch")
+	// Read configurations and derive the eventHub details
+	conf, errReadConfig := config.ReadConfigs()
+	if errReadConfig != nil {
+		logger.LoggerSync.Errorf("Error reading configs for Subscription fetch, Error: %v", errReadConfig)
+	}
+
+	// Populate data from the config
+	ehConfigs := conf.ControlPlane
+	ehURL := ehConfigs.ServiceURL
+
+	// If the eventHub URL is configured with trailing slash
+	if strings.HasSuffix(ehURL, "/") {
+		if apiUUID != "" {
+			ehURL += SubscriptionsByAPIUUIDEndpoint + apiUUID
+		} else {
+			ehURL += SubscriptionsEndpoint
+		}
+	} else {
+		if apiUUID != "" {
+			ehURL += "/" + SubscriptionsByAPIUUIDEndpoint + apiUUID
+		} else {
+			ehURL += "/" + SubscriptionsEndpoint
+		}
+	}
+
+	logger.LoggerSync.Debugf("Complete endpoint constructed final URL: %s", ehURL)
+
+	ehUname := ehConfigs.Username
+	ehPass := ehConfigs.Password
+	basicAuth := "Basic " + pkgAuth.GetBasicAuth(ehUname, ehPass)
+
+	// Check if TLS is enabled
+	skipSSL := ehConfigs.SkipSSLVerification
+
+	// Create a HTTP request
+	req, err := http.NewRequest("GET", ehURL, nil)
+	if err != nil {
+		logger.LoggerSync.Errorf("HTTP request creation failed, URL: %s, Error: %v", ehURL, err)
+	}
+
+	queryParamMap := make(map[string]string)
+
+	if len(queryParamMap) > 0 {
+		q := req.URL.Query()
+		// Making necessary query parameters for the request
+		for queryParamKey, queryParamValue := range queryParamMap {
+			q.Add(queryParamKey, queryParamValue)
+		}
+		req.URL.RawQuery = q.Encode()
+	}
+
+	// Setting authorization header
+	req.Header.Set(Authorization, basicAuth)
+
+	// Make the request
+	logger.LoggerSync.Debugf("Sending control plane request - URL: %s, SkipSSL: %v", ehURL, skipSSL)
+	resp, err := tlsutils.InvokeControlPlane(req, skipSSL)
+	var errorMsg string
+	if err != nil {
+		errorMsg = "Error occurred while calling the REST API: " + SubscriptionsEndpoint
+		logger.LoggerSync.Errorf("Control plane request failed - URL: %s, Error: %v", ehURL, err)
+		return make([]eventhub.Subscription, 0), errorMsg
+	}
+
+	responseBytes, err := ioutil.ReadAll(resp.Body)
+
+	if err != nil {
+		errorMsg = "Error occurred while reading the response received for: " + SubscriptionsEndpoint
+		logger.LoggerSync.Errorf("Response body read failed - URL: %s, Error: %v", ehURL, err)
+		return make([]eventhub.Subscription, 0), errorMsg
+	}
+
+	if resp.StatusCode == http.StatusOK {
+		var subscriptionList eventhub.SubscriptionList
+		err := json.Unmarshal(responseBytes, &subscriptionList)
+		if err != nil {
+			errorMsg = "Error occurred while JSON unmarshaling the response received for: " + SubscriptionsEndpoint
+			logger.LoggerSync.Errorf("JSON unmarshaling failed - URL: %s, Response: %s, Error: %v", ehURL, string(responseBytes), err)
+			return make([]eventhub.Subscription, 0), errorMsg
+		}
+		logger.LoggerSync.Debugf("Subscriptions successfully parsed - URL: %s, Total Subscriptions: %d, Subscriptions: %+v",
+			ehURL, len(subscriptionList.List), subscriptionList.List)
+
+		return subscriptionList.List, ""
+	}
+
+	errorMsg = "Failed to fetch data! " + SubscriptionsEndpoint + " responded with " + strconv.Itoa(resp.StatusCode)
+	logger.LoggerSync.Errorf("Control plane request failed with non-200 status - URL: %s, Status Code: %d, Response Body: %s",
+		ehURL, resp.StatusCode, string(responseBytes))
+	return make([]eventhub.Subscription, 0), errorMsg
+}
