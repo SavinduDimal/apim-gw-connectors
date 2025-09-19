@@ -17,9 +17,13 @@
 
 package managementserver
 
+import "sync"
+
 var (
 	processedAPIUUIDs map[string]struct{} // Hash set for processed API UUIDs
 	processedAppUUIDs map[string]struct{} // Hash set for processed Application UUIDs
+	apiMutex          sync.RWMutex        // Mutex for API UUID operations
+	appMutex          sync.RWMutex        // Mutex for Application UUID operations
 )
 
 func init() {
@@ -29,17 +33,23 @@ func init() {
 
 // AddProcessedAPI marks an API UUID as processed
 func AddProcessedAPI(apiUUID string) {
+	apiMutex.Lock()
+	defer apiMutex.Unlock()
 	processedAPIUUIDs[apiUUID] = struct{}{}
 }
 
 // IsAPIProcessed checks if an API UUID has been processed
 func IsAPIProcessed(apiUUID string) bool {
+	apiMutex.RLock()
+	defer apiMutex.RUnlock()
 	_, exists := processedAPIUUIDs[apiUUID]
 	return exists
 }
 
 // RemoveProcessedAPI removes an API UUID from the processed list
 func RemoveProcessedAPI(apiUUID string) {
+	apiMutex.Lock()
+	defer apiMutex.Unlock()
 	if _, exists := processedAPIUUIDs[apiUUID]; exists {
 		delete(processedAPIUUIDs, apiUUID)
 	}
@@ -47,7 +57,9 @@ func RemoveProcessedAPI(apiUUID string) {
 
 // GetAllProcessedAPIs returns all processed API UUIDs
 func GetAllProcessedAPIs() []string {
-	var apiUUIDs []string
+	apiMutex.RLock()
+	defer apiMutex.RUnlock()
+	apiUUIDs := make([]string, 0, len(processedAPIUUIDs))
 	for uuid := range processedAPIUUIDs {
 		apiUUIDs = append(apiUUIDs, uuid)
 	}
@@ -56,18 +68,23 @@ func GetAllProcessedAPIs() []string {
 
 // AddProcessedApplication marks an Application UUID as processed
 func AddProcessedApplication(appUUID string) {
+	appMutex.Lock()
+	defer appMutex.Unlock()
 	processedAppUUIDs[appUUID] = struct{}{}
-
 }
 
 // IsApplicationProcessed checks if an Application UUID has been processed
 func IsApplicationProcessed(appUUID string) bool {
+	appMutex.RLock()
+	defer appMutex.RUnlock()
 	_, exists := processedAppUUIDs[appUUID]
 	return exists
 }
 
 // RemoveProcessedApplication removes an Application UUID from the processed list
 func RemoveProcessedApplication(appUUID string) {
+	appMutex.Lock()
+	defer appMutex.Unlock()
 	if _, exists := processedAppUUIDs[appUUID]; exists {
 		delete(processedAppUUIDs, appUUID)
 	}
@@ -75,7 +92,9 @@ func RemoveProcessedApplication(appUUID string) {
 
 // GetAllProcessedApplications returns all processed Application UUIDs
 func GetAllProcessedApplications() []string {
-	var appUUIDs []string
+	appMutex.RLock()
+	defer appMutex.RUnlock()
+	appUUIDs := make([]string, 0, len(processedAppUUIDs))
 	for uuid := range processedAppUUIDs {
 		appUUIDs = append(appUUIDs, uuid)
 	}
