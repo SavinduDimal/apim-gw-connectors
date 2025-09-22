@@ -26,12 +26,14 @@ import org.osgi.service.component.annotations.Component;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.ConfigurationDto;
 import org.wso2.carbon.apimgt.api.model.GatewayAgentConfiguration;
+import org.wso2.carbon.apimgt.api.model.GatewayMode;
 import org.wso2.carbon.apimgt.api.model.GatewayPortalConfiguration;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 
@@ -96,5 +98,12 @@ public class EnvoyGatewayConfiguration implements GatewayAgentConfiguration {
     @Override
     public String getDefaultHostnameTemplate() {
         return "";
+    }
+
+    @Override
+    public List<String> getSupportedModes() {
+        return Collections.singletonList(
+                GatewayMode.READ_ONLY.getMode()
+        );
     }
 }
