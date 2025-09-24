@@ -18,37 +18,22 @@
 
 package org.wso2.kong.client.util;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 import com.google.gson.JsonPrimitive;
 
-import org.apache.commons.lang3.StringUtils;
-
-import org.wso2.carbon.apimgt.api.APIManagementException;
-import org.wso2.carbon.apimgt.api.model.API;
 import org.wso2.carbon.apimgt.api.model.CORSConfiguration;
-import org.wso2.carbon.apimgt.api.model.Environment;
-import org.wso2.carbon.apimgt.api.model.URITemplate;
-import org.wso2.carbon.apimgt.impl.utils.APIUtil;
-import org.wso2.kong.client.KongConstants;
-import org.wso2.kong.client.model.CorsPlugin;
 import org.wso2.kong.client.model.KongPlugin;
 import org.wso2.kong.client.model.KongRoute;
 import org.wso2.kong.client.model.KongService;
 
-import java.net.MalformedURLException;
-import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -497,26 +482,6 @@ public class KongAPIUtil {
         return endpointConfig.toString();
     }
 
-    /**
-     * Build endpointConfig JSON for KONG on Kubernetes.
-     */
-    public static String buildEndpointConfigJsonForKubernetes(API api, Environment environment) {
-        JsonObject endpointConfig = new JsonObject();
-
-        endpointConfig.addProperty(KongConstants.KONG_API_UUID, api.getUuid());
-        endpointConfig.addProperty(KongConstants.KONG_API_CONTEXT, api.getContext());
-        endpointConfig.addProperty(KongConstants.KONG_API_VERSION, api.getId().getVersion());
-
-        endpointConfig.addProperty(KongConstants.KONG_GATEWAY_HOST, environment.getVhosts().get(0).getHost());
-        endpointConfig.addProperty(KongConstants.KONG_GATEWAY_HTTP_CONTEXT,
-                environment.getVhosts().get(0).getHttpContext());
-        endpointConfig.addProperty(KongConstants.KONG_GATEWAY_HTTP_PORT, environment.getVhosts().get(0).getHttpPort());
-        endpointConfig.addProperty(KongConstants.KONG_GATEWAY_HTTPS_PORT,
-                environment.getVhosts().get(0).getHttpsPort());
-
-        return endpointConfig.toString();
-    }
-
     public static String buildEndpointUrl(String protocol, String host, int port, String path) {
         StringBuilder sb = new StringBuilder();
         sb.append(protocol).append("://").append(host);
@@ -532,165 +497,6 @@ public class KongAPIUtil {
         return sb.toString();
     }
 
-    public static KongService buildKongService(API api) throws APIManagementException {
-        KongService service = new KongService();
-        service.setName(api.getId().getName());
-        service.setEnabled(true);
-        String endpointConfig = api.getEndpointConfig();
-        if (endpointConfig != null && !endpointConfig.isEmpty()) {
-            JsonObject config = JsonParser.parseString(endpointConfig).getAsJsonObject();
-            JsonObject productionEndpoints = config.has("production_endpoints") ? config.getAsJsonObject(
-                    "production_endpoints") : null;
-            if (productionEndpoints != null && productionEndpoints.has("url") &&
-                    !productionEndpoints.get("url").isJsonNull()) {
-                String url = productionEndpoints.get("url").getAsString();
-                URL parsedUrl;
-                try {
-                    parsedUrl = new URL(url);
-                } catch (MalformedURLException e) {
-                    throw new APIManagementException("Invalid URL in endpoint config: " + url, e);
-                }
-                service.setHost(parsedUrl.getHost());
-                if (parsedUrl.getPort() < 0) {
-                    if (KongConstants.HTTPS_PROTOCOL.equalsIgnoreCase(parsedUrl.getProtocol())) {
-                        service.setPort(KongConstants.DEFAULT_HTTPS_PORT);
-                    } else {
-                        service.setPort(KongConstants.DEFAULT_HTTP_PORT);
-                    }
-                } else {
-                    service.setPort(parsedUrl.getPort());
-                }
-                service.setProtocol(parsedUrl.getProtocol());
-                String path = parsedUrl.getPath();
-                service.setPath((path == null || path.isEmpty()) ? "/" : (path.startsWith("/") ? path : "/" + path));
-            }
-        }
-        return service;
-    }
-
-    /**
-     * Build Kong routes from API URI templates.
-     *
-     * @param api API to be deployed.
-     * @param id  Service id
-     * @return List of routes.
-     */
-    public static List<KongRoute> buildKongRoutes(API api, String id) {
-        List<KongRoute> kongRoutes = new ArrayList<>();
-        if (api != null && StringUtils.isNotEmpty(id)) {
-            Set<URITemplate> uriTemplates = api.getUriTemplates();
-            if (uriTemplates != null && !uriTemplates.isEmpty()) {
-                for (URITemplate template : uriTemplates) {
-                    KongRoute route = new KongRoute();
-                    route.setStripPath(false);
-                    route.setName(template.getHTTPVerb().toLowerCase(Locale.US)
-                            .concat(template.getUriTemplate().replaceAll("[^a-zA-Z0-9_-]", "")));
-                    route.setPaths(Collections.singletonList(toRegex(template.getUriTemplate())));
-                    if (template.getHttpVerb() != null) {
-                        List<String> httpMethods = new ArrayList<>();
-                        if (!"OPTIONS".equals(template.getHTTPVerb().toUpperCase(Locale.US))) {
-                            httpMethods.add("OPTIONS");
-                        }
-                        httpMethods.add(template.getHTTPVerb().toUpperCase(Locale.US));
-                        route.setMethods(httpMethods);
-                    } else {
-                        route.setMethods(Arrays.asList("GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"));
-                    }
-                    route.setService(new KongRoute.ServiceRef(id));
-                    kongRoutes.add(route);
-                }
-            }
-        }
-        return kongRoutes;
-    }
-
-    private static String toRegex(String path) {
-        String regex = path.replaceAll("\\{[^/]+\\}", "([^/]+)")   // normal params
-                .replaceAll("\\{[^/]+\\+\\}", "(.+)");  // greedy params
-        return "~" + regex + "$";
-    }
-
-    /**
-     * Checks if the environment is configured for Kubernetes deployment.
-     *
-     * @param environment The environment to check
-     * @return true if the environment is configured for Kubernetes deployment, false otherwise
-     */
-    public static boolean isKubernetesDeployment(Environment environment) {
-        return Objects.equals(getEnvironmentProperty(environment, KongConstants.KONG_DEPLOYMENT_TYPE),
-                KongConstants.KONG_KUBERNETES_DEPLOYMENT);
-    }
-
-    /**
-     * Safely gets a property from environment's additional properties.
-     *
-     * @param environment The environment
-     * @param key         The property key
-     * @return The property value, or null if not found or environment/properties are null
-     */
-    public static String getEnvironmentProperty(Environment environment, String key) {
-        if (environment == null || environment.getAdditionalProperties() == null || key == null) {
-            return null;
-        }
-        return environment.getAdditionalProperties().get(key);
-    }
-
-    /**
-     * Builds the API execution URL for Kong on Kubernetes deployment. Parses the external reference JSON to extract the
-     * necessary information.
-     *
-     * @param externalReference JSON string containing Kong API configuration
-     * @param protocol          The protocol to use (http or https). If null or empty, defaults to https.
-     * @return The API execution URL for Kong on Kubernetes
-     * @throws APIManagementException If there is an error while constructing the URL.
-     */
-    public static String getAPIExecutionURLForKubernetes(String externalReference, String protocol)
-            throws APIManagementException {
-        try {
-            JsonObject config = JsonParser.parseString(externalReference).getAsJsonObject();
-
-            String host = config.get(KongConstants.KONG_GATEWAY_HOST).getAsString();
-            String context = config.get(KongConstants.KONG_API_CONTEXT).getAsString();
-            String httpContext = config.has(KongConstants.KONG_GATEWAY_HTTP_CONTEXT) ?
-                    config.get(KongConstants.KONG_GATEWAY_HTTP_CONTEXT).getAsString() : null;
-            int httpsPort = config.has(KongConstants.KONG_GATEWAY_HTTPS_PORT) ?
-                    config.get(KongConstants.KONG_GATEWAY_HTTPS_PORT).getAsInt() : KongConstants.DEFAULT_HTTPS_PORT;
-            int httpPort = config.has(KongConstants.KONG_GATEWAY_HTTP_PORT) ?
-                    config.get(KongConstants.KONG_GATEWAY_HTTP_PORT).getAsInt() : KongConstants.DEFAULT_HTTP_PORT;
-
-            StringBuilder url = new StringBuilder();
-            if (protocol == null || protocol.isEmpty()) {
-                protocol = KongConstants.HTTPS_PROTOCOL;
-            }
-            url.append(protocol).append(KongConstants.PROTOCOL_SEPARATOR).append(host);
-
-            if (protocol.equalsIgnoreCase(KongConstants.HTTPS_PROTOCOL) &&
-                    httpsPort != KongConstants.DEFAULT_HTTPS_PORT) {
-                url.append(KongConstants.HOST_PORT_SEPARATOR).append(httpsPort);
-            } else if (protocol.equalsIgnoreCase(KongConstants.HTTP_PROTOCOL) &&
-                    httpPort != KongConstants.DEFAULT_HTTP_PORT) {
-                url.append(KongConstants.HOST_PORT_SEPARATOR).append(httpPort);
-            }
-
-            if (httpContext != null && !httpContext.trim().isEmpty()) {
-                if (!httpContext.startsWith(KongConstants.CONTEXT_SEPARATOR)) {
-                    url.append(KongConstants.CONTEXT_SEPARATOR);
-                }
-                url.append(httpContext);
-            }
-
-            if (!context.startsWith(KongConstants.CONTEXT_SEPARATOR)) {
-                url.append(KongConstants.CONTEXT_SEPARATOR);
-            }
-            url.append(context);
-
-            return url.toString();
-
-        } catch (Exception e) {
-            throw new APIManagementException("Failed to parse Kong external reference");
-        }
-    }
-
     /**
      * Ensures the given string starts with a leading slash.
      * If the string is null or empty, returns "/".
@@ -703,70 +509,5 @@ public class KongAPIUtil {
             return "/";
         }
         return v.startsWith("/") ? v : "/" + v;
-    }
-
-    /**
-     * Builds Kong plugins for the given API and associates them with the specified service ID.
-     *
-     * @param api       The API for which to build plugins
-     * @param serviceId The ID of the Kong service to associate the plugins with
-     * @return A list of Kong plugins associated with the service
-     */
-    public static List<KongPlugin> buildKongPluginsForService(API api, String serviceId) {
-        List<KongPlugin> plugins = new ArrayList<>();
-        KongPlugin corsPlugin = buildCorsPlugin(api, serviceId);
-        if (corsPlugin != null) {
-            plugins.add(corsPlugin);
-        }
-        return plugins;
-    }
-
-    private static KongPlugin buildCorsPlugin(API api, String serviceId) {
-        boolean corsEnabled = false;
-        List<String> origins = new ArrayList<>();
-        List<String> accessControlAllowHeaders = new ArrayList<>();
-        List<String> accessControlAllowMethods = new ArrayList<>();
-        boolean accessControlAllowCredentials = false;
-        List<String> accessControlExposeHeaders = new ArrayList<>();
-        if (APIUtil.isCORSEnabled()) {
-            corsEnabled = true;
-            if (StringUtils.isNotEmpty(APIUtil.getAllowedOrigins())) {
-                origins = Arrays.asList(APIUtil.getAllowedOrigins().split(","));
-            }
-            if (StringUtils.isNotEmpty(APIUtil.getAllowedHeaders())) {
-                accessControlAllowHeaders = Arrays.asList(APIUtil.getAllowedHeaders().split(","));
-            }
-            if (StringUtils.isNotEmpty(APIUtil.getAllowedMethods())) {
-                accessControlAllowMethods = Arrays.asList(APIUtil.getAllowedMethods().split(","));
-            }
-            accessControlAllowCredentials = APIUtil.isAllowCredentials();
-            if (StringUtils.isNotEmpty(APIUtil.getAccessControlExposedHeaders())) {
-                accessControlExposeHeaders = Arrays.asList(APIUtil.getAccessControlExposedHeaders().split(","));
-            }
-        }
-        if (api.getCorsConfiguration() != null) {
-            CORSConfiguration corsConfiguration = api.getCorsConfiguration();
-            if (corsConfiguration.isCorsConfigurationEnabled()) {
-                corsEnabled = true;
-                origins = corsConfiguration.getAccessControlAllowOrigins();
-                accessControlAllowHeaders = corsConfiguration.getAccessControlAllowHeaders();
-                accessControlAllowMethods = corsConfiguration.getAccessControlAllowMethods();
-                accessControlAllowCredentials = corsConfiguration.isAccessControlAllowCredentials();
-            }
-        }
-        if (corsEnabled) {
-            CorsPlugin corsPlugin = new CorsPlugin(false, accessControlAllowCredentials, accessControlExposeHeaders,
-                    accessControlAllowHeaders, accessControlAllowMethods, origins);
-            KongPlugin kongPlugin = new KongPlugin();
-            kongPlugin.setInstanceName(api.getUuid().concat("-cors"));
-            kongPlugin.setName("cors");
-            kongPlugin.setEnabled(true);
-            kongPlugin.setService(new KongPlugin.ServiceRef(serviceId));
-            Gson gson = new GsonBuilder().serializeNulls().create();
-            JsonElement corsJson = gson.toJsonTree(corsPlugin);
-            kongPlugin.setConfig(corsJson.getAsJsonObject());
-            return kongPlugin;
-        }
-        return null;
     }
 }

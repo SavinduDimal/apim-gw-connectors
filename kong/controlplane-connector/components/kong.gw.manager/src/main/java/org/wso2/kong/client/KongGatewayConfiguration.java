@@ -26,12 +26,14 @@ import org.osgi.service.component.annotations.Component;
 import org.wso2.carbon.apimgt.api.APIManagementException;
 import org.wso2.carbon.apimgt.api.model.ConfigurationDto;
 import org.wso2.carbon.apimgt.api.model.GatewayAgentConfiguration;
+import org.wso2.carbon.apimgt.api.model.GatewayMode;
 import org.wso2.carbon.apimgt.api.model.GatewayPortalConfiguration;
 
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 
@@ -135,8 +137,6 @@ public class KongGatewayConfiguration implements GatewayAgentConfiguration {
     }
 
     public List<String> getSupportedModes() {
-        return Arrays.asList(
-                GatewayMode.READ_ONLY.getMode()
-        );
+        return Arrays.asList(GatewayMode.READ_ONLY.getMode());
     }
 }
