@@ -133,4 +133,10 @@ public class KongGatewayConfiguration implements GatewayAgentConfiguration {
     public String getDefaultHostnameTemplate() {
         return "";
     }
+
+    public List<String> getSupportedModes() {
+        return Arrays.asList(
+                GatewayMode.READ_ONLY.getMode()
+        );
+    }
 }
