@@ -35,37 +35,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
-// FetchRateLimitPoliciesOnEvent fetches the policies from the control plane on the start up and notification event updates
-func FetchRateLimitPoliciesOnEvent(ratelimitName string, organization string, c client.Client) {
-	logger.LoggerSynchronizer.Debugf("Starting rate limit policy fetch|ratelimitName:%s organization:%s\n", ratelimitName, organization)
-
-	conf, errReadConfig := config.ReadConfigs()
-	if errReadConfig != nil {
-		logger.LoggerSynchronizer.Errorf("Error reading configs: %v", errReadConfig)
-	}
-
-	rateLimitPolicies, errorMsg := sync.FetchRateLimitPoliciesOnEvent(ratelimitName, organization)
-	if rateLimitPolicies != nil {
-		if len(rateLimitPolicies) == 0 && errorMsg != constants.EmptyString {
-			logger.LoggerSynchronizer.Warnf("Error fetching rate limit policies in retry attempt %d : %s", retryAttempt, errorMsg)
-			go retryRLPFetchData(ratelimitName, organization, conf, errorMsg, c)
-		} else {
-			for _, policy := range rateLimitPolicies {
-				switch policy.QuotaType {
-				case constants.AIAPIQuotaType:
-					logger.LoggerSynchronizer.Infof("AI rate limits are not yet implemented for policy: %s", policy.Name)
-				case constants.RequestCountType:
-					deployRateLimitPlugin(conf, policy.Name, policy.TenantDomain, constants.ServiceLimitBy, constants.ConsumerLimitBy, constants.PolicyTypeKey,
-						policy.DefaultLimit.RequestCount.TimeUnit, policy.DefaultLimit.RequestCount.UnitTime, policy.DefaultLimit.RequestCount.RequestCount, c)
-				case constants.EventCountType:
-					deployRateLimitPlugin(conf, policy.Name, policy.TenantDomain, constants.ServiceLimitBy, constants.ConsumerLimitBy, constants.PolicyTypeKey,
-						policy.DefaultLimit.EventCount.TimeUnit, policy.DefaultLimit.EventCount.UnitTime, policy.DefaultLimit.EventCount.EventCount, c)
-				}
-			}
-		}
-	}
-}
-
 // FetchSubscriptionRateLimitPoliciesOnEvent fetches the policies from the control plane on the start up and notification event updates
 func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organization string, c client.Client, cleanupDeletedPolicies bool) {
 	logger.LoggerSynchronizer.Debugf("Starting subscription rate limit policy fetch|ratelimitName:%s organization:%s cleanupDeletedPolicies:%v\n",
@@ -94,18 +63,6 @@ func FetchSubscriptionRateLimitPoliciesOnEvent(ratelimitName string, organizatio
 				}
 			}
 		}
-	}
-}
-
-func retryRLPFetchData(ratelimitName string, organization string, conf *config.Config, errorMessage string, c client.Client) {
-	logger.LoggerSynchronizer.Debugf("Time Duration for retrying: %v",
-		conf.ControlPlane.RetryInterval*time.Second)
-	time.Sleep(conf.ControlPlane.RetryInterval * time.Second)
-	FetchRateLimitPoliciesOnEvent(ratelimitName, organization, c)
-	retryAttempt++
-	if retryAttempt > constants.MaxRetries {
-		logger.LoggerSynchronizer.Error(errorMessage)
-		return
 	}
 }
 

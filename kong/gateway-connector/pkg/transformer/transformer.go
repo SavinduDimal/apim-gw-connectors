@@ -22,64 +22,13 @@ import (
 
 	v1 "github.com/kong/kubernetes-configuration/api/configuration/v1"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/config"
-	eventHub "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/eventhub/types"
-	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/k8s-resource-lib/constants"
-	httpGenerator "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/k8s-resource-lib/pkg/generators/http"
-	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/k8s-resource-lib/pkg/utils"
 	"github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/k8s-resource-lib/types"
-	apimTransformer "github.com/wso2-extensions/apim-gw-connectors/common-agent/pkg/transformer"
 	kongConstants "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
-	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
-	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
-
-// UpdateCRS updates the Kubernetes custom resources with environment-specific metadata and labels.
-func UpdateCRS(k8sArtifact *K8sArtifacts, environments *[]apimTransformer.Environment, organizationID string, apiUUID string, apiName string, revisionID string, namespace string, configuredRateLimitPoliciesMap map[string]eventHub.RateLimitPolicy) {
-	logger.LoggerUtils.Debugf("UpdateCRS|Starting CR update|API:%s Revision:%s Environments:%d\n",
-		apiUUID, revisionID, len(*environments))
-
-	organizationHash := GenerateSHA1Hash(organizationID)
-
-	for _, httproute := range k8sArtifact.HTTPRoutes {
-		httproute.ObjectMeta.Labels[kongConstants.OrganizationLabel] = organizationHash
-		httproute.ObjectMeta.Labels[kongConstants.APIUUIDLabel] = apiUUID
-		httproute.ObjectMeta.Labels[kongConstants.RevisionIDLabel] = revisionID
-		httproute.ObjectMeta.Labels[kongConstants.APINameLabel] = apiName
-		httproute.ObjectMeta.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
-
-		for _, environment := range *environments {
-			vhost := environment.Vhost
-
-			if httproute.ObjectMeta.Labels[kongConstants.EnvironmentLabel] == constants.ProductionType {
-				httproute.Spec.Hostnames = []gwapiv1.Hostname{gwapiv1.Hostname(vhost)}
-			}
-			if httproute.ObjectMeta.Labels[kongConstants.EnvironmentLabel] == constants.SandboxType {
-				httproute.Spec.Hostnames = []gwapiv1.Hostname{gwapiv1.Hostname(kongConstants.SandboxHostPrefix + vhost)}
-			}
-		}
-	}
-	for _, service := range k8sArtifact.Services {
-		service.ObjectMeta.Labels = make(map[string]string)
-		service.ObjectMeta.Labels[kongConstants.OrganizationLabel] = organizationHash
-		service.ObjectMeta.Labels[kongConstants.APIUUIDLabel] = apiUUID
-		service.ObjectMeta.Labels[kongConstants.RevisionIDLabel] = revisionID
-		service.ObjectMeta.Labels[kongConstants.APINameLabel] = apiName
-		service.ObjectMeta.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
-	}
-	for _, kongPlugin := range k8sArtifact.KongPlugins {
-		kongPlugin.ObjectMeta.Labels = make(map[string]string)
-		kongPlugin.ObjectMeta.Labels[kongConstants.OrganizationLabel] = organizationHash
-		kongPlugin.ObjectMeta.Labels[kongConstants.APIUUIDLabel] = apiUUID
-		kongPlugin.ObjectMeta.Labels[kongConstants.RevisionIDLabel] = revisionID
-		kongPlugin.ObjectMeta.Labels[kongConstants.APINameLabel] = apiName
-		kongPlugin.ObjectMeta.Labels[kongConstants.K8sInitiatedFromField] = kongConstants.ControlPlaneOrigin
-	}
-}
 
 // CreateConsumer handles the Kong consumer generation
 func CreateConsumer(applicationUUID string, environment string, conf *config.Config) *v1.KongConsumer {

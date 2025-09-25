@@ -29,7 +29,6 @@ import (
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 	internalk8sClient "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/k8sClient"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/loggers"
-	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/synchronizer"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -40,7 +39,6 @@ var (
 	ScopeList = make([]types.Scope, 0)
 	// timestamps needs to be maintained as it is not guranteed to receive them in order,
 	// hence older events should be discarded
-	apiListTimeStampMap          = make(map[string]int64, 0)
 	subsriptionsListTimeStampMap = make(map[string]int64, 0)
 	applicationListTimeStampMap  = make(map[string]int64, 0)
 )
@@ -77,32 +75,12 @@ func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 func processPolicyEvent(policyEvent msg.PolicyInfo, eventType string, c client.Client, conf *config.Config) {
 	switch {
 	case strings.EqualFold(policyEvent.PolicyType, constants.APIPolicyType):
-		handleAPIPolicyEvent(policyEvent, eventType, c, conf)
+        logger.LoggerEvents.Debugf("%s: %s", "Received policy event type", policyEvent.PolicyType)
 	case strings.EqualFold(policyEvent.PolicyType, constants.SubscriptionPolicyType):
 		handleSubscriptionPolicyEvent(policyEvent, eventType, c, conf)
 	default:
 		logger.LoggerEvents.Warnf("Unknown policy type: %s", policyEvent.PolicyType)
 	}
-}
-
-// handleAPIPolicyEvent processes API policy events
-func handleAPIPolicyEvent(policyEvent msg.PolicyInfo, eventType string, c client.Client, conf *config.Config) {
-	logger.LoggerEvents.Infof("Policy: %s for policy type: %s for tenant: %s",
-		policyEvent.PolicyName, policyEvent.PolicyType, policyEvent.TenantDomain)
-
-	switch eventType {
-	case eventConstants.PolicyCreate, eventConstants.PolicyUpdate:
-		synchronizer.FetchRateLimitPoliciesOnEvent(policyEvent.PolicyName, policyEvent.TenantDomain, c)
-		logger.LoggerEvents.Debugf("Successfully processed %s event for API policy: %s", eventType, policyEvent.PolicyName)
-	case eventConstants.PolicyDelete:
-		managementserver.DeleteRateLimitPolicy(policyEvent.PolicyName, policyEvent.TenantDomain)
-		crName := transformer.GeneratePolicyCRName(policyEvent.PolicyName, policyEvent.TenantDomain, constants.RateLimitingPlugin, constants.PolicyTypeKey)
-		internalk8sClient.UnDeployKongPluginCR(crName, c, conf)
-		logger.LoggerEvents.Debugf("Successfully deleted API policy: %s and undeployed CR: %s", policyEvent.PolicyName, crName)
-	}
-
-	ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
-	logger.LoggerEvents.Debugf("%s: %v", "Rate Limit Policies Internal Map", ratelimitPolicies)
 }
 
 // handleSubscriptionPolicyEvent processes subscription policy events
@@ -121,9 +99,6 @@ func handleSubscriptionPolicyEvent(policyEvent msg.PolicyInfo, eventType string,
 		internalk8sClient.UnDeployKongPluginCR(crName, c, conf)
 		logger.LoggerEvents.Debugf("Successfully deleted subscription policy: %s and undeployed CR: %s", policyEvent.PolicyName, crName)
 	}
-
-	ratelimitPolicies := managementserver.GetAllRateLimitPolicies()
-	logger.LoggerEvents.Debugf("%s: %v", "Rate Limit Policies Internal Map", ratelimitPolicies)
 }
 
 // HandleAIProviderEvents to process AI Provider related events

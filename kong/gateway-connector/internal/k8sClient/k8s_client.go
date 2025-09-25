@@ -31,7 +31,6 @@ import (
 	k8error "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
 // DeployKongPluginCR applies the given KongPlugin struct to the Kubernetes cluster.
