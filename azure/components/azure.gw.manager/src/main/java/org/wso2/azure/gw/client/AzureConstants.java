@@ -49,6 +49,8 @@ public class AzureConstants {
 
     public static final String API_CONTEXT_VERSION_PLACEHOLDER = "{version}";
 
+    public static final String AZURE_NO_CONTEXT = "azure-no-context";
+
     public static final String AZURE_OAUTH2_OPERATION_POLICY_NAME = "azureOAuth2";
     public static final String AZURE_OAUTH2_OPERATION_POLICY_PARAMETER_OPENID_URL = "openIdURL";
 
