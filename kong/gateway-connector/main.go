@@ -53,11 +53,7 @@ func (a Agent) HandleLifeCycleEvents(data []byte) {
 	events.HandleLifeCycleEvents(data)
 }
 
-// HandleAPIEvents to process api related data
-func (a Agent) HandleAPIEvents(data []byte, eventType string, conf *config.Config, client client.Client) {
-	loggers.LoggerAgent.Println("Triggered: HandleAPIEvents")
-	events.HandleAPIEvents(data, eventType, conf, client)
-}
+
 
 // HandleApplicationEvents to process application related events
 func (a Agent) HandleApplicationEvents(data []byte, eventType string, client client.Client) {

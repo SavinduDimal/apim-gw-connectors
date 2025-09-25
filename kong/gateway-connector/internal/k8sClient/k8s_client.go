@@ -34,58 +34,6 @@ import (
 	gwapiv1 "sigs.k8s.io/gateway-api/apis/v1"
 )
 
-// DeployHTTPRouteCR applies the given HttpRoute struct to the Kubernetes cluster.
-func DeployHTTPRouteCR(httpRoute *gwapiv1.HTTPRoute, k8sClient client.Client) {
-	loggers.LoggerK8sClient.Debugf("Deploying HTTPRoute CR|Name:%s Namespace:%s\n", httpRoute.Name, httpRoute.ObjectMeta.Namespace)
-
-	crHTTPRoute := &gwapiv1.HTTPRoute{}
-	objKey := client.ObjectKey{Namespace: httpRoute.ObjectMeta.Namespace, Name: httpRoute.Name}
-	// Retrieve CR from Kubernetes cluster
-	if err := k8sClient.Get(context.Background(), objKey, crHTTPRoute); err != nil {
-		if !k8error.IsNotFound(err) {
-			loggers.LoggerK8sClient.Error("Unable to get HTTPRoute CR: " + err.Error())
-		}
-		if err := k8sClient.Create(context.Background(), httpRoute); err != nil {
-			loggers.LoggerK8sClient.Error("Unable to create HTTPRoute CR: " + err.Error())
-		} else {
-			loggers.LoggerK8sClient.Info("HTTPRoute CR created: " + httpRoute.Name)
-		}
-	} else {
-		crHTTPRoute.Spec = httpRoute.Spec
-		if err := k8sClient.Update(context.Background(), crHTTPRoute); err != nil {
-			loggers.LoggerK8sClient.Error("Unable to update HTTPRoute CR: " + err.Error())
-		} else {
-			loggers.LoggerK8sClient.Info("HTTPRoute CR updated: " + crHTTPRoute.Name)
-		}
-	}
-}
-
-// DeployServiceCR applies the given Service struct to the Kubernetes cluster.
-func DeployServiceCR(service *corev1.Service, k8sClient client.Client) {
-	loggers.LoggerK8sClient.Debugf("Deploying Service CR|Name:%s Namespace:%s\n", service.Name, service.ObjectMeta.Namespace)
-
-	crService := &corev1.Service{}
-	objKey := client.ObjectKey{Namespace: service.ObjectMeta.Namespace, Name: service.Name}
-	// Retrieve CR from Kubernetes cluster
-	if err := k8sClient.Get(context.Background(), objKey, crService); err != nil {
-		if !k8error.IsNotFound(err) {
-			loggers.LoggerK8sClient.Error("Unable to get Service CR: " + err.Error())
-		}
-		if err := k8sClient.Create(context.Background(), service); err != nil {
-			loggers.LoggerK8sClient.Error("Unable to create Service CR: " + err.Error())
-		} else {
-			loggers.LoggerK8sClient.Info("Service CR created: " + service.Name)
-		}
-	} else {
-		crService.Spec = service.Spec
-		if err := k8sClient.Update(context.Background(), crService); err != nil {
-			loggers.LoggerK8sClient.Error("Unable to update Service CR: " + err.Error())
-		} else {
-			loggers.LoggerK8sClient.Info("Service CR updated: " + crService.Name)
-		}
-	}
-}
-
 // DeployKongPluginCR applies the given KongPlugin struct to the Kubernetes cluster.
 func DeployKongPluginCR(plugin *v1.KongPlugin, k8sClient client.Client) {
 	loggers.LoggerK8sClient.Debugf("Deploying KongPlugin CR|Name:%s Namespace:%s\n", plugin.Name, plugin.ObjectMeta.Namespace)
@@ -286,20 +234,6 @@ func GetK8sSecret(name string, k8sClient client.Client, conf *config.Config) *co
 	return nil
 }
 
-// UndeployAPICRs removes the API Custom Resources from the Kubernetes cluster based on API ID label.
-func UndeployAPICRs(apiID string, k8sClient client.Client) {
-	loggers.LoggerK8sClient.Debugf("Undeploying API CRs|APIID:%s\n", apiID)
-
-	conf, errReadConfig := config.ReadConfigs()
-	if errReadConfig != nil {
-		loggers.LoggerK8sClient.Errorf("Error reading configurations: %v", errReadConfig)
-	}
-
-	undeployHTTPRoutes(apiID, k8sClient, conf)
-	undeployServices(apiID, k8sClient, conf)
-	undeployKongPlugins(k8sClient, conf, labels.SelectorFromSet(map[string]string{constants.APIUUIDLabel: apiID}))
-}
-
 // UndeployAPPCRs removes the APP Custom Resources from the Kubernetes cluster based on Application ID label.
 func UndeployAPPCRs(appID string, k8sClient client.Client) {
 	loggers.LoggerK8sClient.Debugf("Undeploying APP CRs|AppID:%s\n", appID)
@@ -311,60 +245,6 @@ func UndeployAPPCRs(appID string, k8sClient client.Client) {
 	undeployKongConsumers(appID, k8sClient, conf)
 	undeployKongPlugins(k8sClient, conf, labels.SelectorFromSet(map[string]string{constants.ApplicationUUIDLabel: appID}))
 	unDeploySecrets(appID, k8sClient, conf)
-}
-
-// undeployHTTPRoutes removes the HTTPRoute Resources from the Kubernetes cluster based on API ID label.
-func undeployHTTPRoutes(apiID string, k8sClient client.Client, conf *config.Config) {
-	loggers.LoggerK8sClient.Debugf("Undeploying HTTPRoutes|APIID:%s\n", apiID)
-
-	resourceList := &gwapiv1.HTTPRouteList{}
-	listOpts := &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{constants.APIUUIDLabel: apiID})}
-	// Retrieve all CRs from the Kubernetes cluster
-	err := k8sClient.List(context.Background(), resourceList, listOpts)
-	if err != nil {
-		loggers.LoggerK8sClient.Errorf("Unable to list HTTPRoute CRs: %v", err)
-	} else {
-		for _, resource := range resourceList.Items {
-			if origin, exists := resource.GetLabels()[constants.K8sInitiatedFromField]; !exists {
-				continue
-			} else if origin == constants.DataPlaneOrigin {
-				continue
-			}
-			err := k8sClient.Delete(context.Background(), &resource, &client.DeleteOptions{})
-			if err != nil {
-				loggers.LoggerK8sClient.Errorf("Unable to delete HTTPRoute CR: %v", err)
-			} else {
-				loggers.LoggerK8sClient.Infof("Deleted HTTPRoute CR: %s", resource.Name)
-			}
-		}
-	}
-}
-
-// undeployServices removes the Service Resources from the Kubernetes cluster based on API ID label.
-func undeployServices(apiID string, k8sClient client.Client, conf *config.Config) {
-	loggers.LoggerK8sClient.Debugf("Undeploying Services|APIID:%s\n", apiID)
-
-	resourceList := &corev1.ServiceList{}
-	listOpts := &client.ListOptions{Namespace: conf.DataPlane.Namespace, LabelSelector: labels.SelectorFromSet(map[string]string{constants.APIUUIDLabel: apiID})}
-	// Retrieve all CRs from the Kubernetes cluster
-	err := k8sClient.List(context.Background(), resourceList, listOpts)
-	if err != nil {
-		loggers.LoggerK8sClient.Errorf("Unable to list Service CRs: %v", err)
-	} else {
-		for _, resource := range resourceList.Items {
-			if origin, exists := resource.GetLabels()[constants.K8sInitiatedFromField]; !exists {
-				continue
-			} else if origin == constants.DataPlaneOrigin {
-				continue
-			}
-			err := k8sClient.Delete(context.Background(), &resource, &client.DeleteOptions{})
-			if err != nil {
-				loggers.LoggerK8sClient.Errorf("Unable to delete Service CR: %v", err)
-			} else {
-				loggers.LoggerK8sClient.Infof("Deleted Service CR: %s", resource.Name)
-			}
-		}
-	}
 }
 
 // undeployKongPlugins removes the KongPlugin Resources from the Kubernetes cluster based on label selector.

@@ -58,43 +58,6 @@ func HandleLifeCycleEvents(data []byte) {
 	logger.LoggerEvents.Debugf("%s: %+v", "API lifecycle event received", apiEvent)
 }
 
-// HandleAPIEvents to process api related data
-func HandleAPIEvents(data []byte, eventType string, conf *config.Config, c client.Client) {
-	logger.LoggerEvents.Infof("Processing API event with EventType: %s, data length: %d bytes", eventType, len(data))
-
-	var apiEvent msg.APIEvent
-	if err := json.Unmarshal(data, &apiEvent); err != nil {
-		logger.LoggerEvents.Errorf("%s: %v", constants.UnmarshalErrorAPI, err)
-		return
-	}
-
-	if !belongsToTenant(apiEvent.TenantDomain) {
-		logger.LoggerEvents.Debugf("API event for the API %s:%s is dropped due to having non related tenantDomain : %s",
-			apiEvent.APIName, apiEvent.Version, apiEvent.TenantDomain)
-		return
-	}
-
-	currentTimeStamp := apiEvent.Event.TimeStamp
-
-	if strings.EqualFold(eventConstants.DeployAPIToGateway, apiEvent.Event.Type) {
-		internalk8sClient.UndeployAPICRs(apiEvent.UUID, c)
-		go synchronizer.FetchAPIsOnEvent(conf, &apiEvent.UUID, c)
-	}
-
-	for _, env := range apiEvent.GatewayLabels {
-		mapKey := apiEvent.UUID + ":" + env
-		if isLaterEvent(apiListTimeStampMap, mapKey, currentTimeStamp) {
-			logger.LoggerEvents.Debugf("Skipping older event for API %s, environment %s", apiEvent.UUID, env)
-			break
-		}
-		if strings.EqualFold(eventConstants.RemoveAPIFromGateway, apiEvent.Event.Type) {
-			internalk8sClient.UndeployAPICRs(apiEvent.UUID, c)
-			kongMgtServer.RemoveProcessedAPI(apiEvent.UUID)
-			break
-		}
-	}
-}
-
 // HandlePolicyEvents to process policy related events
 func HandlePolicyEvents(data []byte, eventType string, c client.Client) {
 	logger.LoggerEvents.Infof("Processing Policy event with EventType: %s, data length: %d bytes", eventType, len(data))
