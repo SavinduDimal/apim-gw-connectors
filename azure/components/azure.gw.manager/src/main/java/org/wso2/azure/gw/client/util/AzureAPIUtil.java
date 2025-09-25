@@ -391,7 +391,7 @@ public class AzureAPIUtil {
         API api = new API(apiIdentifier);
 
         String context = "/";
-        context += apiContract.path().isEmpty() ? api.getId().getApiName() : apiContract.path();
+        context += apiContract.path().isEmpty() ? AzureConstants.AZURE_NO_CONTEXT : apiContract.path();
         String contextTemplate = context + "/{version}";
         context += "/" + apiIdentifier.getVersion();
 
