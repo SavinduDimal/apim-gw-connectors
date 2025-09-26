@@ -57,9 +57,6 @@ func Run(conf *config.Config, mgr manager.Manager) {
 	loggers.LoggerAgent.Infof("Initializing Kong-specific integrations")
 	initializeKongIntegrations()
 
-	loggers.LoggerAgent.Infof("Fetching rate limit policies from control plane")
-	synchronizer.FetchRateLimitPoliciesOnEvent("", "", mgr.GetClient())
-
 	loggers.LoggerAgent.Infof("Fetching subscription rate limit policies from control plane")
 	synchronizer.FetchSubscriptionRateLimitPoliciesOnEvent("", "", mgr.GetClient(), true)
 
@@ -77,12 +74,6 @@ func Run(conf *config.Config, mgr manager.Manager) {
 
 	loggers.LoggerAgent.Infof("Starting Kong CR Discovery")
 	go discovery.CRWatcher.Watch()
-
-	loggers.LoggerAgent.Infof("Fetching APIs on startup")
-	synchronizer.FetchAPIsOnEvent(conf, nil, mgr.GetClient())
-
-	loggers.LoggerAgent.Infof("Fetching subscriptions on startup")
-	synchronizer.FetchAndProcessSubscriptionsOnStartUp(mgr.GetClient())
 
 	loggers.LoggerAgent.Infof("Kong agent startup completed successfully")
 }

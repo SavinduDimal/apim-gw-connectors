@@ -36,7 +36,6 @@ import (
 	internalk8sClient "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/k8sClient"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/internal/utils"
 	logger "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/loggers"
-	kongMgtServer "github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/managementserver"
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/pkg/transformer"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -82,122 +81,6 @@ func retrySubscriptionsData(apiUUID string, conf *config.Config, errorMessage st
 		logger.LoggerSynchronizer.Error(errorMessage)
 		return
 	}
-}
-
-// FetchAndProcessSubscriptionsOnStartUp fetches all subscriptions and processes applications for APIs that are already processed
-func FetchAndProcessSubscriptionsOnStartUp(c client.Client) {
-	logger.LoggerSynchronizer.Debugf("Starting to process fetched subscriptions")
-
-	conf, errReadConfig := config.ReadConfigs()
-	if errReadConfig != nil {
-		logger.LoggerSynchronizer.Errorf("Error reading configs for Subscription fetch, Error: %v", errReadConfig)
-	}
-
-	subscriptions, errorMsg := FetchSubscriptions("")
-	if subscriptions == nil || errorMsg != "" {
-		logger.LoggerSynchronizer.Errorf("Failed to fetch subscriptions: %s", errorMsg)
-		return
-	}
-
-	logger.LoggerSynchronizer.Debugf("Processing %d subscriptions", len(subscriptions))
-
-	// Map to store application UUIDs with their organizations for unprocessed applications
-	applicationOrganizations := make(map[string]string)
-
-	for _, subscription := range subscriptions {
-		if kongMgtServer.IsAPIProcessed(subscription.APIUUID) {
-			logger.LoggerSynchronizer.Debugf("API %s is processed, checking application %s",
-				subscription.APIUUID, subscription.ApplicationUUID)
-
-			if !kongMgtServer.IsApplicationProcessed(subscription.ApplicationUUID) {
-				kongMgtServer.AddProcessedApplication(subscription.ApplicationUUID)
-
-				if _, exists := applicationOrganizations[subscription.ApplicationUUID]; !exists {
-					applicationOrganizations[subscription.ApplicationUUID] = subscription.ApplicationOrganization
-				}
-
-				logger.LoggerSynchronizer.Debugf("Creating application consumer for application %s",
-					subscription.ApplicationUUID)
-				CreateApplicationConsumerForBothEnvironments(subscription.ApplicationUUID, c, conf)
-				logger.LoggerSynchronizer.Debugf("Successfully created application consumer for %s",
-					subscription.ApplicationUUID)
-			} else {
-				logger.LoggerSynchronizer.Debugf("Application %s already processed, skipping consumer creation",
-					subscription.ApplicationUUID)
-			}
-		} else {
-			logger.LoggerSynchronizer.Debugf("API %s not processed in Kong, skipping application %s",
-				subscription.APIUUID, subscription.ApplicationUUID)
-		}
-	}
-
-	logger.LoggerSynchronizer.Debugf("Total applications tracked: %d", len(applicationOrganizations))
-
-	applicationKeyMappings, errorMsg := FetchApplicationKeyMappings("", c)
-	if applicationKeyMappings == nil || len(applicationKeyMappings) == 0 {
-		return
-	}
-	tenantDomain := applicationKeyMappings[0].TenantDomain
-	if len(applicationKeyMappings) > 0 {
-		logger.LoggerSynchronizer.Debugf("Fetched %d application key mappings", len(applicationKeyMappings))
-		for _, applicationKeyMapping := range applicationKeyMappings {
-			if kongMgtServer.IsApplicationProcessed(applicationKeyMapping.ApplicationUUID) {
-				applicationTenantDomain := ""
-				if orgFromMap, exists := applicationOrganizations[applicationKeyMapping.ApplicationUUID]; exists {
-					applicationTenantDomain = orgFromMap
-				} else {
-					applicationTenantDomain = applicationKeyMapping.TenantDomain
-				}
-
-				ProcessApplicationRegistration(
-					applicationKeyMapping.ApplicationUUID,
-					applicationKeyMapping.ConsumerKey,
-					applicationKeyMapping.KeyManager,
-					applicationTenantDomain,
-					strings.ToLower(applicationKeyMapping.KeyType),
-					c,
-					conf,
-				)
-			}
-		}
-	}
-
-	for _, subscription := range subscriptions {
-		if kongMgtServer.IsAPIProcessed(subscription.APIUUID) {
-			logger.LoggerSynchronizer.Debugf("API %s is processed, proceeding subscription %s",
-				subscription.APIUUID, subscription.ApplicationUUID)
-
-			// Get tenant domain for this specific application
-			applicationTenantDomain := ""
-			if orgFromMap, exists := applicationOrganizations[subscription.ApplicationUUID]; exists {
-				applicationTenantDomain = orgFromMap
-			} else if tenantDomain != "" {
-				applicationTenantDomain = tenantDomain
-			} else {
-				applicationTenantDomain = subscription.ApplicationOrganization
-			}
-
-			isProductionBlocked := false
-			isSandboxBlocked := false
-			switch subscription.SubscriptionState {
-			case constants.SubscriptionStateBlocked:
-				isProductionBlocked = true
-				isSandboxBlocked = true
-			case constants.SubscriptionStateProdOnlyBlocked:
-				isProductionBlocked = true
-			}
-			productionACLGroupNames := []string{transformer.GenerateACLGroupName(subscription.APIName, constants.EnvironmentProduction)}
-			CreateSubscription(subscription.ApplicationUUID, subscription.APIUUID, subscription.PolicyID,
-				applicationTenantDomain, productionACLGroupNames, c, conf, constants.EnvironmentProduction, isProductionBlocked)
-			sandboxACLGroupNames := []string{transformer.GenerateACLGroupName(subscription.APIName, constants.EnvironmentSandbox)}
-			CreateSubscription(subscription.ApplicationUUID, subscription.APIUUID, subscription.PolicyID,
-				applicationTenantDomain, sandboxACLGroupNames, c, conf, constants.EnvironmentSandbox, isSandboxBlocked)
-		} else {
-			logger.LoggerSynchronizer.Debugf("API %s not processed in Kong, skipping subscription %s",
-				subscription.APIUUID, subscription.ApplicationUUID)
-		}
-	}
-
 }
 
 // CreateApplicationConsumerForBothEnvironments creates consumers for both production and sandbox environments

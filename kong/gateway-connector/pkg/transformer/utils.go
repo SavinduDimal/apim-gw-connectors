@@ -29,43 +29,6 @@ import (
 	"github.com/wso2-extensions/apim-gw-connectors/kong/gateway-connector/constants"
 )
 
-// GetUniqueIDForAPI will generate a unique ID for newly created APIs
-func GetUniqueIDForAPI(name, version, organization string) string {
-	loggers.LoggerUtils.Debugf("Generating unique ID|Name:%s Version:%s Org:%s\n", name, version, organization)
-
-	concatenatedString := strings.Join([]string{organization, name, version}, constants.DashSeparatorString)
-	return GenerateSHA1Hash(concatenatedString)
-}
-
-// GenerateOperationsMatrix creates a 2D array for operations
-func GenerateOperationsMatrix(specialOps int, normalOps int, maxColumns int) [][]types.Operation {
-	loggers.LoggerUtils.Debugf("Creating operations matrix|Special:%d Normal:%d MaxCols:%d\n",
-		specialOps, normalOps, maxColumns)
-
-	if specialOps < 0 || normalOps < 0 || maxColumns <= 0 {
-		return nil
-	}
-	totalRows := specialOps + ((normalOps + maxColumns - 1) / maxColumns)
-	operationsArray := make([][]types.Operation, totalRows)
-
-	row := 0
-	// Allocate special operations rows (1 operation per row)
-	for i := 0; i < specialOps; i++ {
-		operationsArray[row] = make([]types.Operation, 1)
-		row++
-	}
-
-	// Allocate normal operations (maxColumns per row)
-	remainingOps := normalOps
-	for row < totalRows {
-		columnsInRow := min(maxColumns, remainingOps)
-		operationsArray[row] = make([]types.Operation, columnsInRow)
-		remainingOps -= columnsInRow
-		row++
-	}
-	return operationsArray
-}
-
 // GeneratePluginCRName generates a reference name for a plugin based on the operation, target reference, and plugin name.
 func GeneratePluginCRName(operation *types.Operation, targetRef string, pluginName string) string {
 	loggers.LoggerUtils.Debugf("Generating plugin CR name|Plugin:%s TargetRef:%s\n", pluginName, targetRef)
