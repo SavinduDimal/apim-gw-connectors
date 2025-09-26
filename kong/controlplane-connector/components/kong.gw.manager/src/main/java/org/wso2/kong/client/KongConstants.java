@@ -31,23 +31,6 @@ public class KongConstants {
     public static final String KONG_STANDALONE_DEPLOYMENT = "Standalone";
     public static final String KONG_KUBERNETES_DEPLOYMENT = "Kubernetes";
 
-    // API endpoint configuration property names
-    public static final String KONG_API_UUID = "uuid";
-    public static final String KONG_API_CONTEXT = "context";
-    public static final String KONG_API_VERSION = "version";
-    public static final String KONG_GATEWAY_HOST = "host";
-    public static final String KONG_GATEWAY_HTTP_CONTEXT = "httpContext";
-    public static final String KONG_GATEWAY_HTTP_PORT = "httpPort";
-    public static final String KONG_GATEWAY_HTTPS_PORT = "httpsPort";
-
-    public static final String HTTPS_PROTOCOL = "https";
-    public static final String HTTP_PROTOCOL = "http";
-    public static final String PROTOCOL_SEPARATOR = "://";
-    public static final String HOST_PORT_SEPARATOR = ":";
-    public static final String CONTEXT_SEPARATOR = "/";
-    public static final int DEFAULT_HTTPS_PORT = 443;
-    public static final int DEFAULT_HTTP_PORT = 80;
-
     // Kong Plugin Types
     public static final String KONG_CORS_PLUGIN_TYPE = "cors";
     public static final String KONG_RATELIMIT_ADVANCED_PLUGIN_TYPE = "rate-limiting-advanced";
